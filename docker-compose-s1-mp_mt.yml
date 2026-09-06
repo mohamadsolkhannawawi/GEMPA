@@ -27,7 +27,7 @@ services:
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
       KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka1:9092
-      KAFKA_LOG_RETENTION_MS: 600000  
+      KAFKA_LOG_RETENTION_MS: 600000
       KAFKA_NUM_PARTITIONS: 5
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 2
@@ -80,7 +80,7 @@ services:
     ports:
       - 27017:27017
     volumes:
-        - ./mongo:/data/db
+      - ./mongo:/data/db
 
   mongo-express:
     image: mongo-express
@@ -114,8 +114,8 @@ services:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
     command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
     restart: always
 
   grafana:
@@ -124,7 +124,7 @@ services:
     env_file:
       - .env
     ports:
-      - "4000:3000"    
+      - "4000:3000"
     environment:
       GF_SERVER_ROOT_URL: http://localhost:4000
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
@@ -207,16 +207,16 @@ services:
     image: docker:cli
     restart: unless-stopped
     volumes: ["/var/run/docker.sock:/var/run/docker.sock"]
-    entrypoint: ["/bin/sh","-c"]
+    entrypoint: ["/bin/sh", "-c"]
     command:
       - |
         while true; do
           # docker ps
 
           sleep 600
-          docker restart eews-p_wave_detector_load_balance-1
-          docker restart eews-p_wave_detector-1
-          docker restart eews-data_archiver-1
+          docker restart gempa-p_wave_detector_load_balance-1
+          docker restart gempa-p_wave_detector-1
+          docker restart gempa-data_archiver-1
           
           # for topic in $(docker exec kafka1 /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka1:9092 --list); do
           #   for partition in $(docker exec kafka1 /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka1:9092 --describe --topic $topic | grep 'Partition:' | awk '{print $2}'); do
@@ -225,14 +225,14 @@ services:
           # done
           
           sleep 30
-          docker restart eews-p_wave_detector_load_balance-2
-          docker restart eews-p_wave_detector-2
-          docker restart eews-data_archiver-2
+          docker restart gempa-p_wave_detector_load_balance-2
+          docker restart gempa-p_wave_detector-2
+          docker restart gempa-data_archiver-2
 
           sleep 30
-          docker restart eews-p_wave_detector_load_balance-3
-          docker restart eews-p_wave_detector-3
-          docker restart eews-data_archiver-3
+          docker restart gempa-p_wave_detector_load_balance-3
+          docker restart gempa-p_wave_detector-3
+          docker restart gempa-data_archiver-3
 
           # for topic in $(docker exec kafka2 /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka2:9093 --list); do
           #   for partition in $(docker exec kafka2 /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka2:9093 --describe --topic $topic | grep 'Partition:' | awk '{print $2}'); do
@@ -241,14 +241,14 @@ services:
           # done
 
           sleep 30
-          docker restart eews-p_wave_detector_load_balance-4
-          docker restart eews-p_wave_detector-4
-          docker restart eews-data_archiver-4
+          docker restart gempa-p_wave_detector_load_balance-4
+          docker restart gempa-p_wave_detector-4
+          docker restart gempa-data_archiver-4
           
           sleep 30
-          docker restart eews-p_wave_detector_load_balance-5
-          docker restart eews-p_wave_detector-5
-          docker restart eews-data_archiver-5
+          docker restart gempa-p_wave_detector_load_balance-5
+          docker restart gempa-p_wave_detector-5
+          docker restart gempa-data_archiver-5
 
           # for topic in $(docker exec kafka3 /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka3:9094 --list); do
           #   for partition in $(docker exec kafka3 /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka3:9094 --describe --topic $topic | grep 'Partition:' | awk '{print $2}'); do

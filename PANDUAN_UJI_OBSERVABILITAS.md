@@ -55,14 +55,14 @@ Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
 ### Clone pertama kali
 
 ```powershell
-git clone https://github.com/mohamadsolkhannawawi/MDLBEEWS-V3.git
-cd MDLBEEWS-V3
+git clone https://github.com/mohamadsolkhannawawi/GEMPA.git
+cd GEMPA
 ```
 
 ### Update jika sudah pernah clone
 
 ```powershell
-cd MDLBEEWS-V3
+cd GEMPA
 git pull origin main
 ```
 
@@ -108,7 +108,7 @@ Sebelum menjalankan skenario apapun, pastikan sistem berjalan dengan benar mengg
 ### Langkah 4.1 — Jalankan docker compose utama
 
 ```powershell
-cd MDLBEEWS-V3
+cd GEMPA
 docker compose up -d --build
 ```
 
