@@ -1,3 +1,3 @@
 Kondisi,CPU Mean (%),CPU P95 (%),RAM Mean (MB),RAM Max (MB)
-Tanpa Metrics,611.7,687.33,23218.52,25954.3
-Dengan Metrics,614.43,674.31,20436.69,24931.07
+Tanpa Metrics,795.48,901.84,21965.59,26512.38
+Dengan Metrics,672.9,760.67,16924.51,24838.96

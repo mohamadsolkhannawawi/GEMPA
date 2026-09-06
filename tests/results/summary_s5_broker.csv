@@ -1,3 +1,3 @@
 Broker,E2E P-Wave Mean (ms),E2E P-Wave P95 (ms),CPU Mean (%),RAM Mean (MB)
-Kafka Native,79.24,116.99,839.11,21640.74
-Kafka + NGINX,44.56,59.75,776.08,8206.59
+Kafka Native,64.62,116.67,849.87,24488.71
+Kafka + NGINX,55.13,105.62,806.01,8423.9
