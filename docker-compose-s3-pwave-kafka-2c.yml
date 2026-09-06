@@ -186,9 +186,9 @@ services:
           # docker ps
 
           sleep 600
-          docker restart mdlbeews-v3-p_wave_detector_load_balance-1
-          docker restart mdlbeews-v3-p_wave_detector-1
-          docker restart mdlbeews-v3-data_archiver-1
+          docker restart eews-p_wave_detector_load_balance-1
+          docker restart eews-p_wave_detector-1
+          docker restart eews-data_archiver-1
           
           # for topic in $(docker exec kafka1 /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka1:9092 --list); do
           #   for partition in $(docker exec kafka1 /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka1:9092 --describe --topic $topic | grep 'Partition:' | awk '{print $2}'); do
@@ -197,14 +197,14 @@ services:
           # done
           
           sleep 30
-          docker restart mdlbeews-v3-p_wave_detector_load_balance-2
-          docker restart mdlbeews-v3-p_wave_detector-2
-          docker restart mdlbeews-v3-data_archiver-2
+          docker restart eews-p_wave_detector_load_balance-2
+          docker restart eews-p_wave_detector-2
+          docker restart eews-data_archiver-2
 
           sleep 30
-          docker restart mdlbeews-v3-p_wave_detector_load_balance-3
-          docker restart mdlbeews-v3-p_wave_detector-3
-          docker restart mdlbeews-v3-data_archiver-3
+          docker restart eews-p_wave_detector_load_balance-3
+          docker restart eews-p_wave_detector-3
+          docker restart eews-data_archiver-3
 
           # for topic in $(docker exec kafka2 /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka2:9093 --list); do
           #   for partition in $(docker exec kafka2 /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka2:9093 --describe --topic $topic | grep 'Partition:' | awk '{print $2}'); do
@@ -213,14 +213,14 @@ services:
           # done
 
           sleep 30
-          docker restart mdlbeews-v3-p_wave_detector_load_balance-4
-          docker restart mdlbeews-v3-p_wave_detector-4
-          docker restart mdlbeews-v3-data_archiver-4
+          docker restart eews-p_wave_detector_load_balance-4
+          docker restart eews-p_wave_detector-4
+          docker restart eews-data_archiver-4
           
           sleep 30
-          docker restart mdlbeews-v3-p_wave_detector_load_balance-5
-          docker restart mdlbeews-v3-p_wave_detector-5
-          docker restart mdlbeews-v3-data_archiver-5
+          docker restart eews-p_wave_detector_load_balance-5
+          docker restart eews-p_wave_detector-5
+          docker restart eews-data_archiver-5
 
           # for topic in $(docker exec kafka3 /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka3:9094 --list); do
           #   for partition in $(docker exec kafka3 /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka3:9094 --describe --topic $topic | grep 'Partition:' | awk '{print $2}'); do
