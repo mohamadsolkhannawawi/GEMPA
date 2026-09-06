@@ -21,6 +21,12 @@ def read_csv(path):
     with open(path, newline="", encoding="utf-8-sig") as file:
         rows = list(csv.DictReader(file))
         
+    # FAIRNESS FIX: Buang 10 baris pertama (warmup 50s) dan batasi hingga maksimal baris ke-40 (200s).
+    # Ini memastikan file yang "bertahan hidup" 300s tidak dirugikan rata-rata RAM-nya 
+    # saat dibandingkan dengan file yang mati duluan karena OOM/Bottleneck.
+    if len(rows) > 10:
+        rows = rows[10:40]
+        
     columns = defaultdict(list)
     for row in rows:
         for name, value in row.items():
