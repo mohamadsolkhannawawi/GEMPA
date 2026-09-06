@@ -107,24 +107,31 @@ def collect_metrics(duration_sec, interval_sec, output_file, prometheus_url, sce
         writer.writerow(headers)
         
         start_time = time.time()
-        while time.time() - start_time < duration_sec:
-            current_time = time.strftime("%Y-%m-%d %H:%M:%S")
-            row = [current_time]
-            
-            for name, query in queries_to_run.items():
-                try:
-                    val = fetch_metric(session, prometheus_url, query)
-                except requests.RequestException as error:
-                    print(f"Prometheus unavailable while querying {name}: {error}")
-                    val = ''
-                except (KeyError, TypeError, ValueError, RuntimeError) as error:
-                    print(f"Metric unavailable for '{name}': {error}")
-                    val = ''
-                row.append(val)
+        try:
+            while time.time() - start_time < duration_sec:
+                current_time = time.strftime("%Y-%m-%d %H:%M:%S")
+                row = [current_time]
                 
-            writer.writerow(row)
-            print(f"Collected at {current_time}: {row}")
-            time.sleep(interval_sec)
+                for name, query in queries_to_run.items():
+                    try:
+                        val = fetch_metric(session, prometheus_url, query)
+                    except requests.RequestException as error:
+                        print(f"[WARNING] Prometheus Timeout (Possible CPU Starvation) while querying {name}: {error}")
+                        val = ''
+                    except (KeyError, TypeError, ValueError, RuntimeError) as error:
+                        print(f"Metric unavailable for '{name}': {error}")
+                        val = ''
+                    row.append(val)
+                    
+                writer.writerow(row)
+                file.flush() # Force write to disk immediately to prevent data loss if OOM killed
+                print(f"Collected at {current_time}: {row}")
+                time.sleep(interval_sec)
+                
+        except MemoryError:
+            print("\n[CRITICAL WARNING] Out of Memory (OOM) error detected! System RAM is exhausted. Metrics collection aborted.")
+        except Exception as e:
+            print(f"\n[CRITICAL WARNING] Metrics collection crashed unexpectedly (Possible CPU/RAM exhaustion): {e}")
             
     print(f"Metrics collection completed. Data saved to {output_file}")
 
