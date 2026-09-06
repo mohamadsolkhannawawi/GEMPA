@@ -77,6 +77,9 @@ def fetch_metric(session, prometheus_url, query):
     if results:
         value = float(results[0]['value'][1])
         return round(value, 4) if math.isfinite(value) else ''
+    else:
+        # Pemicu warning jika Prometheus tidak punya data (misal container mati/OOM)
+        raise RuntimeError("No data returned by Prometheus (Container might be dead or unresponsive)")
     return ''
 
 def collect_metrics(duration_sec, interval_sec, output_file, prometheus_url, scenario="all"):
