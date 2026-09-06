@@ -115,7 +115,8 @@ def collect_metrics(duration_sec, interval_sec, output_file, prometheus_url, sce
                 try:
                     val = fetch_metric(session, prometheus_url, query)
                 except requests.RequestException as error:
-                    raise RuntimeError(f"Prometheus unavailable while querying {name}: {error}") from error
+                    print(f"Prometheus unavailable while querying {name}: {error}")
+                    val = ''
                 except (KeyError, TypeError, ValueError, RuntimeError) as error:
                     print(f"Metric unavailable for '{name}': {error}")
                     val = ''
