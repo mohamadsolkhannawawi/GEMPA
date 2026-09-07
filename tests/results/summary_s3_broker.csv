@@ -1,0 +1,3 @@
+Arsitektur Broker,E2E P-Wave Mean (ms),E2E P-Wave P95 (ms),CPU Mean (%),RAM Mean (MB)
+Kafka Native,90320.18,291000.0,783.82,20154.25
+Kafka + NGINX,42891.05,57211.2,791.99,8448.6
