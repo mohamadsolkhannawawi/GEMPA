@@ -125,7 +125,11 @@ def analyze_s1():
     save_and_print_table("ANALISIS SKENARIO 1 (Optimasi Hulu / Ingestion)", headers, table_data, "summary_s1_concurrency.csv")
 
 def analyze_s2():
-    scenarios = [("Tanpa Metrics", "s2_overhead_no_metrics"), ("Dengan Metrics", "s2_overhead_with_metrics")]
+    scenarios = [
+        ("Tanpa Metrics (CLI)", "s2_overhead_no_metrics_cli"),
+        ("Tanpa Metrics (API)", "s2_overhead_no_metrics_api"),
+        ("Dengan Metrics (Prometheus)", "s2_overhead_with_metrics")
+    ]
     headers = ["Kondisi", "CPU Mean (%)", "CPU P95 (%)", "RAM Mean (MB)", "RAM Max (MB)"]
     table_data = []
     
@@ -138,7 +142,7 @@ def analyze_s2():
         mem = calc_stats(metrics.get("pwave_aggregate_mem_mb", []))
         table_data.append([label, cpu['mean'], cpu['p95'], mem['mean'], mem['max']])
     
-    save_and_print_table("ANALISIS SKENARIO 2 (Overhead Instrumentasi)", headers, table_data, "summary_s2_overhead.csv")
+    save_and_print_table("ANALISIS SKENARIO 2 (Overhead Instrumentasi & Observer Effect)", headers, table_data, "summary_s2_overhead.csv")
 
 def analyze_s3():
     # Menggunakan metode calc_latency_stats agar hasil dalam milidetik (ms)
