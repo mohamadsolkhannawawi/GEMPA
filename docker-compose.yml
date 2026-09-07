@@ -1,13 +1,10 @@
 # ==============================================================================
-# SKENARIO    : Master Compose (Mode Produksi / Default Full Stack)
-# KONFIGURASI : Seluruh layanan mikro EEWS berjalan bersamaan dengan setelan pabrik.
-# PERINTAH    : docker compose -f docker-compose.yml up -d --build
+# SKENARIO    : Skenario Final
+# KONFIGURASI : Final Architecture (NGINX Load Balancer, 5 P-Wave, 4 Archiver, Express.js)
+# PERINTAH    : docker compose up -d --build
 # ==============================================================================
 
 services:
-  # ============================================================================
-  # Infrastructure: Zookeeper + Kafka Cluster
-  # ============================================================================
   zookeeper:
     image: confluentinc/cp-zookeeper:7.7.1
     restart: always
@@ -17,74 +14,76 @@ services:
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
-
   kafka1:
     image: confluentinc/cp-kafka:7.7.1
+    tty: true
     restart: always
     container_name: kafka1
     ports:
       - "9092:9092"
     environment:
       KAFKA_BROKER_ID: 1
+      KAFKA_ADVERTISED_HOST_NAME: kafka1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
       KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka1:9092
-      KAFKA_LOG_RETENTION_MS: 600000
+      KAFKA_LOG_RETENTION_MS: 600000  
       KAFKA_NUM_PARTITIONS: 5
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 2
     depends_on:
       - zookeeper
 
   kafka2:
     image: confluentinc/cp-kafka:7.7.1
+    tty: true
     restart: always
     container_name: kafka2
     ports:
       - "9093:9093"
     environment:
       KAFKA_BROKER_ID: 2
+      KAFKA_ADVERTISED_HOST_NAME: kafka2
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
       KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9093
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka2:9093
       KAFKA_LOG_RETENTION_MS: 600000
       KAFKA_NUM_PARTITIONS: 5
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 2
     depends_on:
       - zookeeper
 
   kafka3:
     image: confluentinc/cp-kafka:7.7.1
+    tty: true
     restart: always
     container_name: kafka3
     ports:
       - "9094:9094"
     environment:
       KAFKA_BROKER_ID: 3
+      KAFKA_ADVERTISED_HOST_NAME: kafka3
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
       KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9094
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka3:9094
       KAFKA_LOG_RETENTION_MS: 600000
       KAFKA_NUM_PARTITIONS: 5
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 2
     depends_on:
       - zookeeper
 
-  # ============================================================================
-  # Infrastructure: MongoDB + InfluxDB
-  # ============================================================================
   mongo:
     image: mongo:7
     restart: always
     ports:
       - 27017:27017
     volumes:
-      - ./mongo:/data/db
+        - ./mongo:/data/db
 
   mongo-express:
-    image: mongo-express:latest
+    image: mongo-express
     restart: always
     ports:
       - 8081:8081
@@ -96,19 +95,16 @@ services:
       - mongo
 
   influxdb:
-    image: influxdb:2.7
+    image: influxdb:latest
     container_name: influxdb
     ports:
       - "8086:8086"
     volumes:
-      - ./influxDB:/var/lib/influxdb2
+      - ./influxDB:/var/lib/influxdb
     env_file:
       - ./influxDB/.env
     restart: always
 
-  # ============================================================================
-  # Observability: Prometheus + Node Exporter + Grafana
-  # ============================================================================
   prometheus:
     image: prom/prometheus:v2.54.1
     container_name: prometheus
@@ -120,56 +116,38 @@ services:
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
-      - '--storage.tsdb.retention.time=30d'
-    restart: always
-    depends_on:
-      - data_provider
-      - p_wave_detector
-      - loc_mag_detector
-      - data_archiver
-      - api_server
-      - fast_api
-
-  node-exporter:
-    image: prom/node-exporter:v1.8.2
-    container_name: node-exporter
-    ports:
-      - "9100:9100"
-    volumes:
-      - /proc:/host/proc:ro
-      - /sys:/host/sys:ro
-      - /:/rootfs:ro
-    command:
-      - '--path.procfs=/host/proc'
-      - '--path.sysfs=/host/sys'
-      - '--path.rootfs=/rootfs'
-      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
     restart: always
 
   grafana:
-    image: grafana/grafana:11.2.2
+    image: grafana/grafana:latest
     container_name: grafana
     env_file:
       - .env
     ports:
-      - "4000:3000"
+      - "4000:3000"    
     environment:
       GF_SERVER_ROOT_URL: http://localhost:4000
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-12345678}
     volumes:
-      - grafana_data:/var/lib/grafana
       - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
       - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
       - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
     restart: always
     depends_on:
-      - prometheus
       - influxdb
 
-  # ============================================================================
-  # EEWS Pipeline: Data Provider
-  # ============================================================================
+  nginx:
+    image: nginx:latest
+    container_name: nginx_load_balancer
+    ports:
+      - "8004:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - p_wave_detector_load_balance
+    restart: always
+
   data_provider:
     container_name: data_provider
     build:
@@ -178,129 +156,77 @@ services:
     tty: true
     env_file:
       - .env
-    environment:
-      ENABLE_METRICS: "true"
     depends_on:
       - kafka1
-      - kafka2
-      - kafka3
     restart: always
 
-  # ============================================================================
-  # EEWS Pipeline: P-Wave Detector (Kafka consumer mode, scalable)
-  # ============================================================================
-  p_wave_detector:
+  p_wave_detector_load_balance:
     build:
       context: .
-      dockerfile: p_wave_detector/Dockerfile
+      dockerfile: p_wave_detector_load_balance/Dockerfile
+    ports:
+      - "8004"
     deploy:
-      replicas: 3
+      replicas: 5
+      resources:
+        limits:
+          memory: 4G # Auto restart if TensorFlow memory leaks exceed 4GB
     tty: true
     env_file:
       - .env
-    environment:
-      ENABLE_METRICS: "true"
     depends_on:
       - kafka1
-      - kafka2
-      - kafka3
     restart: always
 
-  # ============================================================================
-  # EEWS Pipeline: Load Balancer (Kafka → HTTP forwarder)
-  # ============================================================================
-  # load_balancer:
-  #   build:
-  #     context: ./load_balancer
-  #   deploy:
-  #     replicas: 1
-  #   tty: true
-  #   env_file:
-  #     - .env
-  #   environment:
-  #     ENABLE_METRICS: "true"
-  #   depends_on:
-  #     - kafka1
-  #   restart: always
-
-  # ============================================================================
-  # EEWS Pipeline: P-Wave Detector (Load-Balanced HTTP mode)
-  # ============================================================================
-  # p_wave_detector_load_balance:
-  #   build:
-  #     context: ./p_wave_detector_load_balance
-  #   ports:
-  #     - "8004"
-  #   deploy:
-  #     replicas: 4
-  #   tty: true
-  #   env_file:
-  #     - .env
-  #   environment:
-  #     ENABLE_METRICS: "true"
-  #   depends_on:
-  #     - kafka1
-  #   restart: always
-
-  # ============================================================================
-  # EEWS Pipeline: NGINX Load Balancer (for S4 scenario)
-  # ============================================================================
-  # nginx:
-  #   image: nginx:1.27
-  #   container_name: nginx_load_balancer
-  #   ports:
-  #     - "8004:80"
-  #   volumes:
-  #     - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-  #   depends_on:
-  #     - p_wave_detector_load_balance
-  #   restart: always
-
-  # ============================================================================
-  # EEWS Pipeline: Location & Magnitude Detector
-  # ============================================================================
   loc_mag_detector:
     build:
       context: .
       dockerfile: loc_mag_detector/Dockerfile
     deploy:
       replicas: 1
+      resources:
+        limits:
+          memory: 4G # Auto restart if TensorFlow memory leaks exceed 4GB
     tty: true
     env_file:
       - .env
-    environment:
-      ENABLE_METRICS: "true"
     depends_on:
       - kafka1
-      - kafka2
     restart: always
 
-  # ============================================================================
-  # EEWS Pipeline: Data Archiver
-  # ============================================================================
+  load_balancer:
+    build:
+      context: .
+      dockerfile: load_balancer/Dockerfile
+    environment:
+      LB_TARGET_URL: "http://nginx_load_balancer:80/trace"
+    deploy:
+      replicas: 1
+    tty: true
+    env_file:
+      - .env
+    depends_on:
+      - kafka1
+    restart: always
+
   data_archiver:
     build:
       context: .
       dockerfile: data_archiver/Dockerfile
     deploy:
-      replicas: 3
+      replicas: 4
     volumes:
       - ./data_archiver/data_archive:/mnt/data
     tty: true
     env_file:
       - .env
-    environment:
-      ENABLE_METRICS: "true"
     depends_on:
       - kafka1
-      - kafka2
       - influxdb
       - mongo
+      - mongo-express
     restart: always
 
-  # ============================================================================
-  # EEWS Pipeline: WebSocket Server (Express.js / Socket.IO)
-  # ============================================================================
   api_server:
     container_name: api_server
     build:
@@ -308,37 +234,11 @@ services:
       dockerfile: api_server/Dockerfile
     ports:
       - "3333:3333"
-      - "8107:8107"
     tty: true
     env_file:
       - .env
-    environment:
-      ENABLE_METRICS: "true"
     depends_on:
       - kafka1
-      - kafka2
-      - kafka3
-    restart: always
-
-  # ============================================================================
-  # EEWS Pipeline: WebSocket Server (FastAPI)
-  # ============================================================================
-  fast_api:
-    container_name: fast_api
-    build:
-      context: .
-      dockerfile: fast_api/Dockerfile
-    ports:
-      - "3334:3333"
-      - "8108:3333"
-    tty: true
-    env_file:
-      - .env
-    environment:
-      ENABLE_METRICS: "true"
-    depends_on:
-      - kafka1
-      - kafka2
     restart: always
 
   telegraf:
@@ -355,4 +255,5 @@ services:
 
 volumes:
   prometheus_data:
-  grafana_data:
+
+
