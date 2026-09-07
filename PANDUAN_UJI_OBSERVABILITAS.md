@@ -92,16 +92,16 @@ Perintah ini harus selesai tanpa error. Jika ada error, periksa apakah file `.en
 
 ## 3. Pemasangan Dependensi Python
 
-Semua skrip pengumpul metrik membutuhkan library berikut. Pasang sekali saja:
+Semua skrip pengumpul metrik membutuhkan library berikut. Pasang sekali saja menggunakan file requirements:
 
 ```powershell
-pip install requests websockets
+pip install -r tests/requirements.txt
 ```
 
 ### Verifikasi
 
 ```powershell
-python -c "import requests, websockets; print('OK')"
+python -c "import requests, websockets, docker; print('OK')"
 ```
 
 ---
