@@ -1,7 +1,7 @@
 # ==============================================================================
-# SKENARIO    : S4 — Perbandingan WebSocket Server
-# KONFIGURASI : Express.js / Socket.IO (Koneksi bisa disimulasikan 1 atau 5 Klien via Script)
-# PERINTAH    : docker compose -f docker-compose-s4-express.yml up -d --build
+# SKENARIO    : S5 — Optimasi Hilir (Diseminasi WebSocket)
+# KONFIGURASI : FastAPI WebSocket (Koneksi bisa disimulasikan 1 atau 5 Klien via Script)
+# PERINTAH    : docker compose -f docker-compose-s4-fastapi.yml up -d --build
 # ==============================================================================
 
 services:
@@ -219,20 +219,19 @@ services:
       - mongo-express
     restart: always
 
-  api_server:
-    container_name: api_server
+  fast_api:
+    container_name: fast_api
     build:
       context: .
-      dockerfile: api_server/Dockerfile
+      dockerfile: fast_api/Dockerfile
     ports:
-      - "3333:3333"
+      - "3334:3333"
     tty: true
     env_file:
       - .env
     depends_on:
       - kafka1
     restart: always
-
   telegraf:
     image: telegraf:1.29
     container_name: telegraf

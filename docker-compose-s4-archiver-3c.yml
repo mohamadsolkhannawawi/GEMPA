@@ -1,7 +1,7 @@
 # ==============================================================================
-# SKENARIO    : S3 — Skalabilitas Worker Node (P-Wave Detector)
-# KONFIGURASI : FastAPI HTTP Load Balanced - 4 Container P-Wave Detector
-# PERINTAH    : docker compose -f docker-compose-s3-pwave-kafka-nginx-4c.yml up -d --build
+# SKENARIO    : S4 — Uji Skalabilitas (Stress Testing) (Data Archiver)
+# KONFIGURASI : 3 Container Data Archiver
+# PERINTAH    : docker compose -f docker-compose-s3-archiver-3c.yml up -d --build
 # ==============================================================================
 
 services:
@@ -192,8 +192,6 @@ services:
     build:
       context: .
       dockerfile: load_balancer/Dockerfile
-    environment:
-      LB_TARGET_URL: "http://nginx_load_balancer:80/trace"
     deploy:
       replicas: 1
     tty: true
@@ -208,7 +206,7 @@ services:
       context: .
       dockerfile: data_archiver/Dockerfile
     deploy:
-      replicas: 5
+      replicas: 3
     volumes:
       - ./data_archiver/data_archive:/mnt/data
     tty: true

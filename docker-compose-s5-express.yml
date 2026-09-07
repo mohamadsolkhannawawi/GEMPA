@@ -1,7 +1,7 @@
 # ==============================================================================
-# SKENARIO    : S3 — Skalabilitas Worker Node (P-Wave Detector)
-# KONFIGURASI : Kafka Native - 3 Container P-Wave Detector
-# PERINTAH    : docker compose -f docker-compose-s3-pwave-kafka-3c.yml up -d --build
+# SKENARIO    : S5 — Optimasi Hilir (Diseminasi WebSocket)
+# KONFIGURASI : Express.js / Socket.IO (Koneksi bisa disimulasikan 1 atau 5 Klien via Script)
+# PERINTAH    : docker compose -f docker-compose-s4-express.yml up -d --build
 # ==============================================================================
 
 services:
@@ -137,6 +137,17 @@ services:
     depends_on:
       - influxdb
 
+  nginx:
+    image: nginx:latest
+    container_name: nginx_load_balancer
+    ports:
+      - "8004:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - p_wave_detector_load_balance
+    restart: always
+
   data_provider:
     container_name: data_provider
     build:
@@ -149,12 +160,14 @@ services:
       - kafka1
     restart: always
 
-  p_wave_detector:
+  p_wave_detector_load_balance:
     build:
       context: .
-      dockerfile: p_wave_detector/Dockerfile
+      dockerfile: p_wave_detector_load_balance/Dockerfile
+    ports:
+      - "8004"
     deploy:
-      replicas: 3
+      replicas: 4
     tty: true
     env_file:
       - .env
@@ -175,12 +188,25 @@ services:
       - kafka1
     restart: always
 
+  load_balancer:
+    build:
+      context: .
+      dockerfile: load_balancer/Dockerfile
+    deploy:
+      replicas: 1
+    tty: true
+    env_file:
+      - .env
+    depends_on:
+      - kafka1
+    restart: always
+
   data_archiver:
     build:
       context: .
       dockerfile: data_archiver/Dockerfile
     deploy:
-      replicas: 5
+      replicas: 3
     volumes:
       - ./data_archiver/data_archive:/mnt/data
     tty: true
@@ -207,19 +233,6 @@ services:
       - kafka1
     restart: always
 
-  fast_api:
-    container_name: fast_api
-    build:
-      context: .
-      dockerfile: fast_api/Dockerfile
-    ports:
-      - "3334:3333"
-    tty: true
-    env_file:
-      - .env
-    depends_on:
-      - kafka1
-    restart: always
   telegraf:
     image: telegraf:1.29
     container_name: telegraf

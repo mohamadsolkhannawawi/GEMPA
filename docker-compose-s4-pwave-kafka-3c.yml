@@ -1,7 +1,7 @@
 # ==============================================================================
-# SKENARIO    : S3 — Skalabilitas Worker Node (Data Archiver)
-# KONFIGURASI : 3 Container Data Archiver
-# PERINTAH    : docker compose -f docker-compose-s3-archiver-3c.yml up -d --build
+# SKENARIO    : S4 — Uji Skalabilitas (Stress Testing) (P-Wave Detector)
+# KONFIGURASI : Kafka Native - 3 Container P-Wave Detector
+# PERINTAH    : docker compose -f docker-compose-s3-pwave-kafka-3c.yml up -d --build
 # ==============================================================================
 
 services:
@@ -137,17 +137,6 @@ services:
     depends_on:
       - influxdb
 
-  nginx:
-    image: nginx:latest
-    container_name: nginx_load_balancer
-    ports:
-      - "8004:80"
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-    depends_on:
-      - p_wave_detector_load_balance
-    restart: always
-
   data_provider:
     container_name: data_provider
     build:
@@ -160,14 +149,12 @@ services:
       - kafka1
     restart: always
 
-  p_wave_detector_load_balance:
+  p_wave_detector:
     build:
       context: .
-      dockerfile: p_wave_detector_load_balance/Dockerfile
-    ports:
-      - "8004"
+      dockerfile: p_wave_detector/Dockerfile
     deploy:
-      replicas: 4
+      replicas: 3
     tty: true
     env_file:
       - .env
@@ -188,25 +175,12 @@ services:
       - kafka1
     restart: always
 
-  load_balancer:
-    build:
-      context: .
-      dockerfile: load_balancer/Dockerfile
-    deploy:
-      replicas: 1
-    tty: true
-    env_file:
-      - .env
-    depends_on:
-      - kafka1
-    restart: always
-
   data_archiver:
     build:
       context: .
       dockerfile: data_archiver/Dockerfile
     deploy:
-      replicas: 3
+      replicas: 5
     volumes:
       - ./data_archiver/data_archive:/mnt/data
     tty: true

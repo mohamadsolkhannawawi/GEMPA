@@ -1,0 +1,9 @@
+Arsitektur,Replika ML,Throughput (Trace/s),Inference Latency P95 (ms),CPU Mean (%),RAM Mean (MB)
+Native Kafka,2 Container,N/A,N/A,N/A,N/A
+Native Kafka,3 Container,N/A,N/A,N/A,N/A
+Native Kafka,4 Container,N/A,N/A,N/A,N/A
+Native Kafka,5 Container,N/A,N/A,N/A,N/A
+Load Balancer,2 Container,N/A,N/A,N/A,N/A
+Load Balancer,3 Container,N/A,N/A,N/A,N/A
+Load Balancer,4 Container,N/A,N/A,N/A,N/A
+Load Balancer,5 Container,N/A,N/A,N/A,N/A

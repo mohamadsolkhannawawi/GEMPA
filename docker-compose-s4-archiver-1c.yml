@@ -1,7 +1,7 @@
 # ==============================================================================
-# SKENARIO    : S3 — Skalabilitas Worker Node (Data Archiver)
-# KONFIGURASI : 2 Container Data Archiver
-# PERINTAH    : docker compose -f docker-compose-s3-archiver-2c.yml up -d --build
+# SKENARIO    : S4 — Uji Skalabilitas (Stress Testing) (Data Archiver)
+# KONFIGURASI : 1 Container Data Archiver
+# PERINTAH    : docker compose -f docker-compose-s3-archiver-1c.yml up -d --build
 # ==============================================================================
 
 services:
@@ -206,7 +206,7 @@ services:
       context: .
       dockerfile: data_archiver/Dockerfile
     deploy:
-      replicas: 2
+      replicas: 1
     volumes:
       - ./data_archiver/data_archive:/mnt/data
     tty: true

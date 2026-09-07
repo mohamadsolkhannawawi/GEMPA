@@ -24,17 +24,17 @@ Write-Host "`n[1/6] Menjalankan Skenario S1 (Data Provider)..." -ForegroundColor
 Write-Host "`n[2/6] Menjalankan Skenario S2 (Instrumentasi Overhead)..." -ForegroundColor Yellow
 & "$ScriptDir\run_s2_overhead.ps1" -DurationSec $DurationSec
 
-Write-Host "`n[3/6] Menjalankan Skenario S3 (Data Archiver Scalability)..." -ForegroundColor Yellow
-& "$ScriptDir\run_s3_scalability_archiver.ps1" -DurationSec $DurationSec
+Write-Host "`n[3/6] Menjalankan Skenario S3 (Load Balancer - Kafka vs NGINX)..." -ForegroundColor Yellow
+& "$ScriptDir\run_s3_broker.ps1" -DurationSec $DurationSec
 
-Write-Host "`n[4/6] Menjalankan Skenario S3 (P-Wave Detector Scalability)..." -ForegroundColor Yellow
-& "$ScriptDir\run_s3_scalability_pwave.ps1" -DurationSec $DurationSec
+Write-Host "`n[4/6] Menjalankan Skenario S4 (Data Archiver Scalability)..." -ForegroundColor Yellow
+& "$ScriptDir\run_s4_scalability_archiver.ps1" -DurationSec $DurationSec
 
-Write-Host "`n[5/6] Menjalankan Skenario S4 (WebSocket Express vs FastAPI)..." -ForegroundColor Yellow
-& "$ScriptDir\run_s4_websocket.ps1" -DurationSec $DurationSec
+Write-Host "`n[5/6] Menjalankan Skenario S4 (P-Wave Detector Scalability)..." -ForegroundColor Yellow
+& "$ScriptDir\run_s4_scalability_pwave.ps1" -DurationSec $DurationSec
 
-Write-Host "`n[6/6] Menjalankan Skenario S5 (Load Balancer - Kafka vs NGINX)..." -ForegroundColor Yellow
-& "$ScriptDir\run_s5_loadbalancer.ps1" -DurationSec $DurationSec
+Write-Host "`n[6/6] Menjalankan Skenario S5 (WebSocket Express vs FastAPI)..." -ForegroundColor Yellow
+& "$ScriptDir\run_s5_websocket.ps1" -DurationSec $DurationSec
 
 Write-Host "============================================================" -ForegroundColor Green
 Write-Host " SEMUA PENGUJIAN SELESAI! Hasil tersedia di tests/results/" -ForegroundColor Green

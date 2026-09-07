@@ -1,0 +1,5 @@
+Arsitektur,Throughput (Trace/s),CPU Mean (%),CPU Max (%),RAM Mean (MB)
+SEQUENTIAL,N/A,N/A,N/A,N/A
+MULTITHREAD,N/A,N/A,N/A,N/A
+MULTIPROCESS,N/A,N/A,N/A,N/A
+MP_MT,N/A,N/A,N/A,N/A

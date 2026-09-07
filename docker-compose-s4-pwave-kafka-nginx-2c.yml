@@ -1,7 +1,7 @@
 # ==============================================================================
-# SKENARIO    : S3 — Skalabilitas Worker Node (P-Wave Detector)
-# KONFIGURASI : FastAPI HTTP Load Balanced - 5 Container P-Wave Detector
-# PERINTAH    : docker compose -f docker-compose-s3-pwave-kafka-nginx-5c.yml up -d --build
+# SKENARIO    : S4 — Uji Skalabilitas (Stress Testing) (P-Wave Detector)
+# KONFIGURASI : FastAPI HTTP Load Balanced - 2 Container P-Wave Detector
+# PERINTAH    : docker compose -f docker-compose-s3-pwave-kafka-nginx-2c.yml up -d --build
 # ==============================================================================
 
 services:
@@ -167,7 +167,7 @@ services:
     ports:
       - "8004"
     deploy:
-      replicas: 5
+      replicas: 2
     tty: true
     env_file:
       - .env

@@ -10,10 +10,10 @@ $RootDir = Split-Path -Parent $ScriptDir
 Set-Location $RootDir
 
 $Scenarios = @(
-    @{ Name="Express1c"; File="docker-compose-s4-express.yml"; TargetURI="ws://localhost:3333/socket.io/?EIO=4&transport=websocket"; Clients=1; OutStats="tests/results/s4_websocket_express_1c_stats.csv"; OutMetrics="tests/results/s4_websocket_express_1c_metrics.csv" },
-    @{ Name="Express5c"; File="docker-compose-s4-express.yml"; TargetURI="ws://localhost:3333/socket.io/?EIO=4&transport=websocket"; Clients=5; OutStats="tests/results/s4_websocket_express_5c_stats.csv"; OutMetrics="tests/results/s4_websocket_express_5c_metrics.csv" },
-    @{ Name="FastAPI1c"; File="docker-compose-s4-fastapi.yml"; TargetURI="ws://localhost:3334/ws"; Clients=1; OutStats="tests/results/s4_websocket_fastapi_1c_stats.csv"; OutMetrics="tests/results/s4_websocket_fastapi_1c_metrics.csv" },
-    @{ Name="FastAPI5c"; File="docker-compose-s4-fastapi.yml"; TargetURI="ws://localhost:3334/ws"; Clients=5; OutStats="tests/results/s4_websocket_fastapi_5c_stats.csv"; OutMetrics="tests/results/s4_websocket_fastapi_5c_metrics.csv" }
+    @{ Name="Express1c"; File="docker-compose-s5-express.yml"; TargetURI="ws://localhost:3333/socket.io/?EIO=4&transport=websocket"; Clients=1; OutStats="tests/results/s5_websocket_express_1c_stats.csv"; OutMetrics="tests/results/s5_websocket_express_1c_metrics.csv" },
+    @{ Name="Express5c"; File="docker-compose-s5-express.yml"; TargetURI="ws://localhost:3333/socket.io/?EIO=4&transport=websocket"; Clients=5; OutStats="tests/results/s5_websocket_express_5c_stats.csv"; OutMetrics="tests/results/s5_websocket_express_5c_metrics.csv" },
+    @{ Name="FastAPI1c"; File="docker-compose-s5-fastapi.yml"; TargetURI="ws://localhost:3334/ws"; Clients=1; OutStats="tests/results/s5_websocket_fastapi_1c_stats.csv"; OutMetrics="tests/results/s5_websocket_fastapi_1c_metrics.csv" },
+    @{ Name="FastAPI5c"; File="docker-compose-s5-fastapi.yml"; TargetURI="ws://localhost:3334/ws"; Clients=5; OutStats="tests/results/s5_websocket_fastapi_5c_stats.csv"; OutMetrics="tests/results/s5_websocket_fastapi_5c_metrics.csv" }
 )
 
 if ($ScenarioName -ne "All") {
@@ -27,7 +27,7 @@ if ($ScenarioName -ne "All") {
 
 foreach ($s in $Scenarios) {
     Write-Host "============================================================" -ForegroundColor Cyan
-    Write-Host "Running S4 WebSocket Scenario: $($s.Name)" -ForegroundColor Cyan
+    Write-Host "Running S5 WebSocket Scenario: $($s.Name)" -ForegroundColor Cyan
     Write-Host "============================================================" -ForegroundColor Cyan
     
     docker compose -f $($s.File) down -v --remove-orphans
@@ -40,7 +40,7 @@ foreach ($s in $Scenarios) {
     $procLoad = Start-Process -FilePath $PythonExecutable -ArgumentList "tests/ws_load_generator.py --uri $($s.TargetURI) --clients $($s.Clients) --duration $DurationSec" -PassThru -NoNewWindow
     
     Write-Host "Collecting Docker Stats and Prometheus Metrics..."
-    $proc2 = Start-Process -FilePath $PythonExecutable -ArgumentList "tests/collect_metrics.py --scenario s4 --duration $DurationSec --output $($s.OutMetrics)" -PassThru -NoNewWindow
+    $proc2 = Start-Process -FilePath $PythonExecutable -ArgumentList "tests/collect_metrics.py --scenario s5 --duration $DurationSec --output $($s.OutMetrics)" -PassThru -NoNewWindow
     
     Wait-Process -InputObject $procLoad
     Wait-Process -InputObject $proc2
@@ -49,4 +49,4 @@ foreach ($s in $Scenarios) {
     docker compose -f $($s.File) down -v --remove-orphans
 }
 
-Write-Host "S4 WebSocket testing completed!" -ForegroundColor Green
+Write-Host "S5 WebSocket testing completed!" -ForegroundColor Green
