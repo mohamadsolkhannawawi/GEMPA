@@ -21,14 +21,16 @@ ALL_QUERIES = {
     "active_ws_clients_fastapi": 'fastapi_ws_active_clients',
     "dp_throughput_traces_per_sec": 'sum(rate(data_provider_traces_sent_total[1m]))',
     "pwave_aggregate_cpu_percent": 'sum(docker_container_cpu_usage_percent{container_name=~".*p_wave_detector.*"})',
-    "pwave_aggregate_mem_mb": 'sum(docker_container_mem_usage{container_name=~".*p_wave_detector.*"}) / 1048576'
+    "pwave_aggregate_mem_mb": 'sum(docker_container_mem_usage{container_name=~".*p_wave_detector.*"}) / 1048576',
+    "archiver_aggregate_cpu_percent": 'sum(docker_container_cpu_usage_percent{container_name=~".*data_archiver.*"})',
+    "archiver_aggregate_mem_mb": 'sum(docker_container_mem_usage{container_name=~".*data_archiver.*"}) / 1048576'
 }
 
 SCENARIO_MAPPING = {
     "s1": ["dp_throughput_traces_per_sec", "pwave_aggregate_cpu_percent", "pwave_aggregate_mem_mb"],
     "s2": ["dp_throughput_traces_per_sec", "pwave_inference_latency_p95", "locmag_inference_latency_p95", "e2e_delay_pwave_p95", "e2e_delay_locmag_p95", "pwave_aggregate_cpu_percent", "pwave_aggregate_mem_mb"],
-    "s3a": ["dp_throughput_traces_per_sec", "pwave_aggregate_cpu_percent", "pwave_aggregate_mem_mb"],
-    "s3b": ["dp_throughput_traces_per_sec", "pwave_inference_latency_p95", "pwave_lb_inference_latency_p95", "pwave_aggregate_cpu_percent", "pwave_aggregate_mem_mb"],
+    "s3_archiver": ["dp_throughput_traces_per_sec", "archiver_aggregate_cpu_percent", "archiver_aggregate_mem_mb"],
+    "s3_pwave": ["dp_throughput_traces_per_sec", "pwave_inference_latency_p95", "pwave_lb_inference_latency_p95", "pwave_aggregate_cpu_percent", "pwave_aggregate_mem_mb"],
     "s4": ["dp_throughput_traces_per_sec", "ws_broadcast_latency_p95", "fastapi_ws_broadcast_latency_p95", "active_ws_clients_express", "active_ws_clients_fastapi", "pwave_aggregate_cpu_percent", "pwave_aggregate_mem_mb"],
     "s5": ["dp_throughput_traces_per_sec", "pwave_inference_latency_p95", "pwave_lb_inference_latency_p95", "lb_forward_latency_p95", "e2e_delay_pwave_p95", "pwave_aggregate_cpu_percent", "pwave_aggregate_mem_mb"],
     "all": list(ALL_QUERIES.keys())

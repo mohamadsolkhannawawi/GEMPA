@@ -38,7 +38,7 @@ foreach ($s in $Scenarios) {
     Start-Sleep -Seconds 60
     
     Write-Host "Collecting Docker Stats and Prometheus Metrics..."
-    $proc2 = Start-Process -FilePath $PythonExecutable -ArgumentList "tests/collect_metrics.py --scenario s3a --duration $DurationSec --output $($s.OutMetrics)" -PassThru -NoNewWindow
+    $proc2 = Start-Process -FilePath $PythonExecutable -ArgumentList "tests/collect_metrics.py --scenario s3_archiver --duration $DurationSec --output $($s.OutMetrics)" -PassThru -NoNewWindow
     Wait-Process -InputObject $proc2
 
     Write-Host "Tearing down $($s.Name)..."
