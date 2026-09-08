@@ -316,7 +316,7 @@
     <div class="hud-header">
         <div class="hud-brand">
             <div class="hud-brand-logo"></div>
-            <div class="hud-brand-title">GEMPA <span>TELEMETRY HUD</span></div>
+            <div class="hud-brand-title">GEMPA <span>FASTAPI HUD</span></div>
         </div>
         <div id="statusBadge" class="status-badge">
             <div class="pulse"></div>
@@ -327,8 +327,8 @@
     <!-- Top Telemetry KPI Bar -->
     <div class="kpi-grid">
         <div class="kpi-card active-red">
-            <div class="kpi-label">SERVER ENGINE <span>02</span></div>
-            <div class="kpi-value" style="font-size: 1.25rem; margin-top: 0.25rem;">FASTAPI / NATIVE WS</div>
+            <div class="kpi-label">SERVER ENGINE <span>FASTAPI</span></div>
+            <div class="kpi-value" style="font-size: 1.25rem; margin-top: 0.25rem; color: var(--red-accent);">FASTAPI / NATIVE WS</div>
             <div class="kpi-bar">
                 <div class="bar-segment filled"></div>
                 <div class="bar-segment filled"></div>
@@ -532,11 +532,17 @@
             let depth = '-';
             let mag = '-';
             
-            if (data.predictions_loc_mag && data.predictions_loc_mag.length >= 4) {
-                const preds = data.predictions_loc_mag;
-                latLong = `${preds[0].toFixed(3)}, ${preds[1].toFixed(3)}`;
-                depth = `${preds[2].toFixed(1)} km`;
-                mag = `M ${preds[3].toFixed(1)}`;
+            let preds = data.predictions_loc_mag;
+            if (Array.isArray(preds) && preds.length > 0) {
+                // Unwrap if 2D batch array [[lat, lon, depth, mag]]
+                if (Array.isArray(preds[0])) {
+                    preds = preds[0];
+                }
+                if (preds.length >= 4 && typeof preds[0] === 'number') {
+                    latLong = `${preds[0].toFixed(3)}, ${preds[1].toFixed(3)}`;
+                    depth = `${preds[2].toFixed(1)} km`;
+                    mag = `M ${preds[3].toFixed(1)}`;
+                }
             }
 
             const rowHtml = `
