@@ -234,6 +234,22 @@ services:
       dockerfile: api_server/Dockerfile
     ports:
       - "3333:3333"
+      - "8107:8107"
+    tty: true
+    env_file:
+      - .env
+    depends_on:
+      - kafka1
+    restart: always
+
+  fast_api:
+    container_name: fast_api
+    build:
+      context: .
+      dockerfile: fast_api/Dockerfile
+    ports:
+      - "3334:3333"
+      - "8108:8108"
     tty: true
     env_file:
       - .env
