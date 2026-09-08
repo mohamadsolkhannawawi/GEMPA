@@ -1,0 +1,5 @@
+WebSocket Server,Klien Aktif,Broadcast P95 (ms),CPU Mean (%),RAM Mean (MB)
+FastAPI,1 Klien,0.6,755.93,8517.82
+FastAPI,5 Klien,0.4,719.12,9607.49
+Express.js,1 Klien,0.9,748.23,9789.14
+Express.js,5 Klien,1.0,741.09,9759.77
