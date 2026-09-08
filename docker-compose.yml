@@ -160,8 +160,6 @@ services:
     build:
       context: .
       dockerfile: data_provider/Dockerfile
-    volumes:
-      - ./data_provider:/app
     tty: true
     env_file:
       - .env
