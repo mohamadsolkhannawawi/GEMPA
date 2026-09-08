@@ -435,9 +435,30 @@
         const kpiTraceCount = document.getElementById('kpiTraceCount');
         const kpiLocMagCount = document.getElementById('kpiLocMagCount');
 
-        let traceCount = 0;
-        let locMagCount = 0;
+        let traceCount = parseInt(localStorage.getItem('gempa_express_trace_count') || '0', 10);
+        let locMagCount = parseInt(localStorage.getItem('gempa_express_locmag_count') || '0', 10);
         const MAX_ROWS = 15;
+
+        // Restore persisted state on load
+        function restorePersistedData() {
+            if (traceCount > 0) {
+                traceCountEl.textContent = `${traceCount} MSG`;
+                kpiTraceCount.textContent = traceCount;
+            }
+            if (locMagCount > 0) {
+                locMagCountEl.textContent = `${locMagCount} MSG`;
+                kpiLocMagCount.textContent = locMagCount;
+            }
+            const savedTraceHtml = localStorage.getItem('gempa_express_trace_html');
+            if (savedTraceHtml) {
+                traceTable.innerHTML = savedTraceHtml;
+            }
+            const savedLocMagHtml = localStorage.getItem('gempa_express_locmag_html');
+            if (savedLocMagHtml) {
+                locMagTable.innerHTML = savedLocMagHtml;
+            }
+        }
+        restorePersistedData();
 
         // Connection Management
         socket.on('connect', () => {
@@ -460,8 +481,8 @@
             return { text: `${delayMs} ms`, class: className };
         }
 
-        // Helper function to append row with rolling window
-        function appendRow(tableBody, htmlString) {
+        // Helper function to append row with rolling window & save to localStorage
+        function appendRow(tableBody, htmlString, storageKey) {
             if (tableBody.querySelector('.empty-state')) {
                 tableBody.innerHTML = '';
             }
@@ -475,6 +496,10 @@
             if (tableBody.children.length > MAX_ROWS) {
                 tableBody.removeChild(tableBody.lastChild);
             }
+
+            if (storageKey) {
+                localStorage.setItem(storageKey, tableBody.innerHTML);
+            }
         }
 
         // Handle P-Wave Trace Data
@@ -482,6 +507,7 @@
             traceCount++;
             traceCountEl.textContent = `${traceCount} MSG`;
             kpiTraceCount.textContent = traceCount;
+            localStorage.setItem('gempa_express_trace_count', traceCount);
 
             const delay = formatDelay(data.api_time);
             const triggerTime = data.timestamp ? new Date(data.timestamp * 1000).toLocaleTimeString() : new Date().toLocaleTimeString();
@@ -492,14 +518,15 @@
                 <td>${triggerTime}</td>
                 <td class="${delay.class}">${delay.text}</td>
             `;
-            appendRow(traceTable, rowHtml);
+            appendRow(traceTable, rowHtml, 'gempa_express_trace_html');
         });
 
-        // Handle Loc-Mag Data (FIXED PREDICTIONS PARSING BUG)
+        // Handle Loc-Mag Data
         socket.on('loc-mag-data', (data) => {
             locMagCount++;
             locMagCountEl.textContent = `${locMagCount} MSG`;
             kpiLocMagCount.textContent = locMagCount;
+            localStorage.setItem('gempa_express_locmag_count', locMagCount);
 
             let latLong = '-';
             let depth = '-';
@@ -507,7 +534,6 @@
             
             let preds = data.predictions_loc_mag;
             if (Array.isArray(preds) && preds.length > 0) {
-                // Unwrap if 2D batch array [[lat, lon, depth, mag]]
                 if (Array.isArray(preds[0])) {
                     preds = preds[0];
                 }
@@ -524,7 +550,7 @@
                 <td>${depth}</td>
                 <td class="mag-value">${mag}</td>
             `;
-            appendRow(locMagTable, rowHtml);
+            appendRow(locMagTable, rowHtml, 'gempa_express_locmag_html');
         });
     </script>
 </body>
