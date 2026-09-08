@@ -1,0 +1,9 @@
+Arsitektur,Replika ML,Throughput (Trace/s),Inference Latency P95 (ms),CPU Mean (%),RAM Mean (MB)
+Native Kafka,2 Container,239.3,117000.0,544.15,17089.48
+Native Kafka,3 Container,237.07,117000.0,638.76,21188.08
+Native Kafka,4 Container,229.56,201000.0,656.27,22783.94
+Native Kafka,5 Container,267.14,289066.7,611.17,24027.15
+Load Balancer,2 Container,236.64,279716.4,431.11,5750.32
+Load Balancer,3 Container,243.15,117000.0,574.98,7213.96
+Load Balancer,4 Container,235.49,117000.0,689.84,9065.55
+Load Balancer,5 Container,231.69,56781.6,704.42,10206.03
