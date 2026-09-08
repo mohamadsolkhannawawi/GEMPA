@@ -302,12 +302,12 @@
     }
   ],
   "schemaVersion": 39,
-  "tags": ["eews", "observability", "prometheus"],
+  "tags": ["gempa", "observability", "prometheus"],
   "templating": { "list": [] },
   "time": { "from": "now-15m", "to": "now" },
   "timepicker": {},
   "timezone": "browser",
-  "title": "EEWS Observability Dashboard",
+  "title": "GEMPA Observability Dashboard",
   "uid": "eews-observability-v2",
   "version": 1,
   "refresh": "10s"

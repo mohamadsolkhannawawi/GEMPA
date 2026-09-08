@@ -20,7 +20,7 @@ datasources:
     jsonData:
       version: Flux
       organization: owner
-      defaultBucket: eews
+      defaultBucket: gempa
     secureJsonData:
       token: ${INFLUXDB_TOKEN}
 
