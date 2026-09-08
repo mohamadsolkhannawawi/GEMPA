@@ -2,6 +2,7 @@ import time
 import json
 import random
 import sys
+import os
 
 def simulate_earthquake_kafka(station, network, magnitude, lat, lon, depth):
     try:
@@ -10,13 +11,17 @@ def simulate_earthquake_kafka(station, network, magnitude, lat, lon, depth):
         print("Error: Library 'kafka-python' belum terpasang.")
         print("Silakan jalankan perintah berikut untuk memasangnya:")
         print("    pip install kafka-python")
-        print("\nMencoba fallback via WebSocket...")
         return False
+
+    env_brokers = os.getenv("KAFKA_BROKERS_ALL", "kafka1:9092,kafka2:9093,kafka3:9094").split(',')
+    fallback_brokers = ['localhost:9092', 'localhost:9093', 'localhost:9094', '127.0.0.1:9092']
+    all_brokers = list(dict.fromkeys(env_brokers + fallback_brokers))
 
     try:
         producer = KafkaProducer(
-            bootstrap_servers=['localhost:9092', 'localhost:9093', 'localhost:9094'],
-            value_serializer=lambda v: json.dumps(v).encode('utf-8')
+            bootstrap_servers=all_brokers,
+            value_serializer=lambda v: json.dumps(v).encode('utf-8'),
+            request_timeout_ms=5000
         )
         
         now = time.time()
@@ -50,7 +55,9 @@ def simulate_earthquake_kafka(station, network, magnitude, lat, lon, depth):
         print("Simulated Earthquake Event Broadcasted Successfully to Dashboard!")
         return True
     except Exception as e:
-        print(f"Failed to produce to Kafka: {e}")
+        print(f"Failed to produce to Kafka directly from host: {e}")
+        print("\nPetunjuk: Jalankan perintah ini via Docker Exec agar terhubung ke jaringan Kafka internal:")
+        print(f"    docker compose exec data_provider python tests/simulate_earthquake.py --station \"{station}\" --magnitude {magnitude} --depth {depth}")
         return False
 
 if __name__ == '__main__':
