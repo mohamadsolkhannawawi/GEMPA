@@ -3,20 +3,22 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GEMPA Dashboard | FastAPI Server</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <title>GEMPA Telemetry HUD | FastAPI Server</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&family=Space+Mono:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
     <style>
         :root {
-            --bg-color: #020617;
-            --panel-bg: rgba(255, 255, 255, 0.03);
-            --border: rgba(255, 255, 255, 0.05);
-            --text-main: #f8fafc;
-            --text-muted: #94a3b8;
-            --accent: #10b981; /* Emerald green for FastAPI to differentiate */
-            --accent-glow: rgba(16, 185, 129, 0.2);
-            --success: #10b981;
-            --danger: #ef4444;
-            --warning: #f59e0b;
+            --bg-dark: #050507;
+            --panel-bg: #0C0C0E;
+            --panel-border: #1A1A20;
+            --panel-border-hover: #2E2E38;
+            --red-accent: #FF1E27;
+            --red-glow: rgba(255, 30, 39, 0.2);
+            --red-dim: #3A0A0D;
+            --text-bright: #FFFFFF;
+            --text-muted: #8E8E93;
+            --text-dim: #48484A;
+            --good-green: #30D158;
+            --warn-orange: #FF9F0A;
         }
 
         * {
@@ -26,218 +28,370 @@
         }
 
         body {
-            font-family: 'Inter', sans-serif;
-            background: radial-gradient(circle at top right, #022c22, var(--bg-color)); /* Subtle emerald tint */
-            color: var(--text-main);
+            font-family: 'Outfit', sans-serif;
+            background-color: var(--bg-dark);
+            color: var(--text-bright);
             min-height: 100vh;
-            padding: 2rem;
+            padding: 1.5rem 2rem;
             display: flex;
             flex-direction: column;
-            gap: 2rem;
+            gap: 1.5rem;
         }
 
-        /* Header & Status */
-        .header {
+        /* Top Telemetry Header */
+        .hud-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding-bottom: 1rem;
-            border-bottom: 1px solid var(--border);
+            padding-bottom: 1.25rem;
+            border-bottom: 1px solid var(--panel-border);
         }
 
-        .header h1 {
-            font-size: 1.5rem;
-            font-weight: 700;
-            letter-spacing: -0.025em;
+        .hud-brand {
             display: flex;
             align-items: center;
-            gap: 0.75rem;
+            gap: 1rem;
         }
 
-        .header h1 span {
-            color: var(--accent);
+        .hud-brand-logo {
+            width: 14px;
+            height: 14px;
+            background: var(--red-accent);
+            box-shadow: 0 0 12px var(--red-accent);
+            transform: rotate(45deg);
+        }
+
+        .hud-brand-title {
+            font-size: 1.5rem;
+            font-weight: 800;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--text-bright);
+        }
+
+        .hud-brand-title span {
+            color: var(--red-accent);
         }
 
         .status-badge {
             display: flex;
             align-items: center;
-            gap: 0.5rem;
-            background: var(--panel-bg);
-            padding: 0.5rem 1rem;
-            border-radius: 9999px;
-            border: 1px solid var(--border);
-            font-size: 0.875rem;
-            font-weight: 600;
+            gap: 0.75rem;
+            background: #0A0A0C;
+            padding: 0.5rem 1.25rem;
+            border: 1px solid var(--panel-border);
+            font-family: 'Space Mono', monospace;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--text-muted);
         }
 
         .pulse {
             width: 8px;
             height: 8px;
             border-radius: 50%;
-            background: var(--danger);
-            box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4);
-            animation: pulse-danger 2s infinite;
+            background: var(--text-dim);
         }
 
         .connected .pulse {
-            background: var(--success);
-            box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4);
-            animation: pulse-success 2s infinite;
+            background: var(--red-accent);
+            box-shadow: 0 0 10px var(--red-accent);
+            animation: pulse-glow 1.5s infinite alternate;
         }
 
-        @keyframes pulse-success {
-            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
-            70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(16, 185, 129, 0); }
-            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+        .connected {
+            color: var(--text-bright);
+            border-color: var(--red-accent);
         }
 
-        @keyframes pulse-danger {
-            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
-            70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
-            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+        @keyframes pulse-glow {
+            0% { opacity: 0.4; transform: scale(0.9); }
+            100% { opacity: 1; transform: scale(1.1); box-shadow: 0 0 14px var(--red-accent); }
         }
 
-        /* Grid Layout */
-        .grid {
+        /* Top Telemetry KPI Bar */
+        .kpi-grid {
             display: grid;
-            grid-template-columns: 1fr;
-            gap: 2rem;
-        }
-        
-        @media (min-width: 1024px) {
-            .grid {
-                grid-template-columns: 1fr 1fr;
-            }
+            grid-template-columns: repeat(4, 1fr);
+            gap: 1rem;
         }
 
-        /* Glassmorphism Panel */
+        .kpi-card {
+            background: var(--panel-bg);
+            border: 1px solid var(--panel-border);
+            padding: 1.25rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .kpi-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 3px;
+            height: 100%;
+            background: var(--panel-border);
+        }
+
+        .kpi-card.active-red::before {
+            background: var(--red-accent);
+            box-shadow: 0 0 8px var(--red-accent);
+        }
+
+        .kpi-label {
+            font-family: 'Space Mono', monospace;
+            font-size: 0.7rem;
+            font-weight: 700;
+            color: var(--text-muted);
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .kpi-value {
+            font-family: 'Space Mono', monospace;
+            font-size: 1.85rem;
+            font-weight: 700;
+            color: var(--text-bright);
+            line-height: 1.1;
+        }
+
+        .kpi-bar {
+            display: flex;
+            gap: 3px;
+            margin-top: 0.25rem;
+        }
+
+        .bar-segment {
+            flex: 1;
+            height: 5px;
+            background: #18181C;
+        }
+
+        .bar-segment.filled {
+            background: var(--red-accent);
+        }
+
+        /* Content Grid */
+        .hud-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5rem;
+        }
+
+        @media (max-width: 1024px) {
+            .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+            .hud-grid { grid-template-columns: 1fr; }
+        }
+
         .panel {
             background: var(--panel-bg);
-            backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
-            border: 1px solid var(--border);
-            border-radius: 16px;
-            padding: 1.5rem;
-            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+            border: 1px solid var(--panel-border);
+            padding: 1.25rem;
             display: flex;
             flex-direction: column;
             gap: 1rem;
-            overflow: hidden;
-            max-height: 600px;
+            height: 520px;
         }
 
-        .panel h2 {
-            font-size: 1.125rem;
-            color: var(--text-muted);
-            font-weight: 600;
+        .panel-header {
             display: flex;
             justify-content: space-between;
+            align-items: center;
+            padding-bottom: 0.75rem;
+            border-bottom: 1px solid var(--panel-border);
         }
 
-        .count-badge {
-            background: var(--accent-glow);
-            color: var(--accent);
-            padding: 0.125rem 0.5rem;
-            border-radius: 9999px;
+        .panel-title {
+            font-family: 'Space Mono', monospace;
+            font-size: 0.85rem;
+            font-weight: 700;
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+            color: var(--text-bright);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .panel-title::before {
+            content: '//';
+            color: var(--red-accent);
+        }
+
+        .count-tag {
+            font-family: 'Space Mono', monospace;
             font-size: 0.75rem;
+            color: var(--red-accent);
+            background: var(--red-dim);
+            border: 1px solid rgba(255, 30, 39, 0.4);
+            padding: 0.2rem 0.6rem;
+            font-weight: 700;
         }
 
-        /* Table Styles */
+        /* Telemetry Table */
         .table-container {
             overflow-y: auto;
             flex: 1;
         }
 
         .table-container::-webkit-scrollbar {
-            width: 6px;
+            width: 4px;
         }
         .table-container::-webkit-scrollbar-track {
-            background: transparent;
+            background: var(--panel-bg);
         }
         .table-container::-webkit-scrollbar-thumb {
-            background: var(--border);
-            border-radius: 10px;
+            background: var(--panel-border-hover);
         }
 
         table {
             width: 100%;
             border-collapse: collapse;
+            font-family: 'Space Mono', monospace;
+            font-size: 0.8rem;
             text-align: left;
-            font-size: 0.875rem;
         }
 
         th {
             position: sticky;
             top: 0;
-            background: rgba(2, 6, 23, 0.8);
-            backdrop-filter: blur(8px);
-            padding: 0.75rem;
+            background: #09090B;
+            padding: 0.75rem 0.5rem;
             color: var(--text-muted);
-            font-weight: 600;
-            border-bottom: 1px solid var(--border);
+            font-weight: 700;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            border-bottom: 1px solid var(--panel-border);
             z-index: 10;
         }
 
         td {
-            padding: 0.75rem;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.02);
-            font-variant-numeric: tabular-nums;
+            padding: 0.75rem 0.5rem;
+            border-bottom: 1px solid #141418;
+            color: var(--text-bright);
         }
 
         tr {
-            transition: background-color 0.2s;
+            transition: background 0.15s ease;
         }
 
         tr:hover {
-            background-color: rgba(255, 255, 255, 0.02);
+            background: #121216;
         }
 
         .highlight {
-            animation: highlight-row 1s ease-out;
+            animation: highlight-telemetry 0.8s ease-out;
         }
 
-        @keyframes highlight-row {
-            0% { background-color: var(--accent-glow); }
+        @keyframes highlight-telemetry {
+            0% { background-color: var(--red-dim); color: var(--red-accent); }
             100% { background-color: transparent; }
         }
 
         .empty-state {
             text-align: center;
-            padding: 3rem 1rem;
-            color: var(--text-muted);
-            font-style: italic;
+            padding: 4rem 1rem;
+            color: var(--text-dim);
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
         }
 
-        .delay-good { color: var(--success); }
-        .delay-warn { color: var(--warning); }
-        .delay-bad { color: var(--danger); }
+        .delay-good { color: var(--good-green); }
+        .delay-warn { color: var(--warn-orange); }
+        .delay-bad { color: var(--red-accent); font-weight: bold; }
+        .mag-value { color: var(--red-accent); font-weight: bold; }
     </style>
 </head>
 <body>
-    <div class="header">
-        <h1>GEMPA <span>FastAPI Dashboard</span></h1>
+
+    <!-- Header -->
+    <div class="hud-header">
+        <div class="hud-brand">
+            <div class="hud-brand-logo"></div>
+            <div class="hud-brand-title">GEMPA <span>TELEMETRY HUD</span></div>
+        </div>
         <div id="statusBadge" class="status-badge">
             <div class="pulse"></div>
-            <span id="statusText">Connecting...</span>
+            <span id="statusText">CONNECTING...</span>
         </div>
     </div>
 
-    <div class="grid">
+    <!-- Top Telemetry KPI Bar -->
+    <div class="kpi-grid">
+        <div class="kpi-card active-red">
+            <div class="kpi-label">SERVER ENGINE <span>02</span></div>
+            <div class="kpi-value" style="font-size: 1.25rem; margin-top: 0.25rem;">FASTAPI / NATIVE WS</div>
+            <div class="kpi-bar">
+                <div class="bar-segment filled"></div>
+                <div class="bar-segment filled"></div>
+                <div class="bar-segment filled"></div>
+                <div class="bar-segment filled"></div>
+                <div class="bar-segment filled"></div>
+            </div>
+        </div>
+        <div class="kpi-card active-red">
+            <div class="kpi-label">P-WAVE TRACES <span>INLINE</span></div>
+            <div class="kpi-value" id="kpiTraceCount">0</div>
+            <div class="kpi-bar">
+                <div class="bar-segment filled"></div>
+                <div class="bar-segment filled"></div>
+                <div class="bar-segment filled"></div>
+                <div class="bar-segment filled"></div>
+                <div class="bar-segment"></div>
+            </div>
+        </div>
+        <div class="kpi-card active-red">
+            <div class="kpi-label">LOC-MAG EVENTS <span>PREDICTIONS</span></div>
+            <div class="kpi-value" id="kpiLocMagCount">0</div>
+            <div class="kpi-bar">
+                <div class="bar-segment filled"></div>
+                <div class="bar-segment filled"></div>
+                <div class="bar-segment filled"></div>
+                <div class="bar-segment"></div>
+                <div class="bar-segment"></div>
+            </div>
+        </div>
+        <div class="kpi-card active-red">
+            <div class="kpi-label">SYSTEM FREQ <span>STATUS</span></div>
+            <div class="kpi-value" style="color: var(--good-green);">OPTIMAL</div>
+            <div class="kpi-bar">
+                <div class="bar-segment filled" style="background: var(--good-green);"></div>
+                <div class="bar-segment filled" style="background: var(--good-green);"></div>
+                <div class="bar-segment filled" style="background: var(--good-green);"></div>
+                <div class="bar-segment filled" style="background: var(--good-green);"></div>
+                <div class="bar-segment filled" style="background: var(--good-green);"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Grid -->
+    <div class="hud-grid">
         <!-- Trace Panel -->
         <div class="panel">
-            <h2>P-Wave Trace Data <span class="count-badge" id="traceCount">0 msg</span></h2>
+            <div class="panel-header">
+                <div class="panel-title">P-WAVE TRACE DATA STREAM</div>
+                <div class="count-tag" id="traceCount">0 MSG</div>
+            </div>
             <div class="table-container">
                 <table id="traceTable">
                     <thead>
                         <tr>
-                            <th>Station</th>
-                            <th>Network</th>
-                            <th>Trigger Time</th>
-                            <th>Network Delay</th>
+                            <th>STATION</th>
+                            <th>NETWORK</th>
+                            <th>TRIGGER TIME</th>
+                            <th>LATENCY</th>
                         </tr>
                     </thead>
                     <tbody>
-                        <tr><td colspan="4" class="empty-state">Waiting for trace events...</td></tr>
+                        <tr><td colspan="4" class="empty-state">// STANDBY: WAITING FOR DATA INGESTION...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -245,19 +399,22 @@
 
         <!-- Loc-Mag Panel -->
         <div class="panel">
-            <h2>Location & Magnitude <span class="count-badge" id="locMagCount">0 msg</span></h2>
+            <div class="panel-header">
+                <div class="panel-title">LOCATION & MAGNITUDE ESTIMATION</div>
+                <div class="count-tag" id="locMagCount">0 MSG</div>
+            </div>
             <div class="table-container">
                 <table id="locMagTable">
                     <thead>
                         <tr>
-                            <th>Station</th>
-                            <th>Lat, Long</th>
-                            <th>Depth</th>
-                            <th>Magnitude</th>
+                            <th>STATION</th>
+                            <th>COORDINATES</th>
+                            <th>DEPTH</th>
+                            <th>MAGNITUDE</th>
                         </tr>
                     </thead>
                     <tbody>
-                        <tr><td colspan="4" class="empty-state">Waiting for prediction events...</td></tr>
+                        <tr><td colspan="4" class="empty-state">// STANDBY: WAITING FOR ESTIMATION EVENTS...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -273,6 +430,8 @@
         
         const traceCountEl = document.getElementById('traceCount');
         const locMagCountEl = document.getElementById('locMagCount');
+        const kpiTraceCount = document.getElementById('kpiTraceCount');
+        const kpiLocMagCount = document.getElementById('kpiLocMagCount');
 
         let traceCount = 0;
         let locMagCount = 0;
@@ -290,13 +449,12 @@
 
             ws.onopen = () => {
                 statusBadge.classList.add('connected');
-                statusText.textContent = 'Live (Native WS)';
+                statusText.textContent = 'LIVE // NATIVE WS';
             };
 
             ws.onclose = () => {
                 statusBadge.classList.remove('connected');
-                statusText.textContent = 'Disconnected...';
-                // Attempt to reconnect
+                statusText.textContent = 'DISCONNECTED';
                 setTimeout(connectWebSocket, reconnectInterval);
             };
 
@@ -332,7 +490,6 @@
 
         // Helper function to append row with rolling window
         function appendRow(tableBody, htmlString) {
-            // Remove empty state if exists
             if (tableBody.querySelector('.empty-state')) {
                 tableBody.innerHTML = '';
             }
@@ -343,7 +500,6 @@
             
             tableBody.prepend(tr);
             
-            // Limit rows to save memory
             if (tableBody.children.length > MAX_ROWS) {
                 tableBody.removeChild(tableBody.lastChild);
             }
@@ -352,14 +508,15 @@
         // Event Handlers
         function handleWavesData(data) {
             traceCount++;
-            traceCountEl.textContent = `${traceCount} msg`;
+            traceCountEl.textContent = `${traceCount} MSG`;
+            kpiTraceCount.textContent = traceCount;
 
             const delay = formatDelay(data.api_time);
             const triggerTime = data.timestamp ? new Date(data.timestamp * 1000).toLocaleTimeString() : new Date().toLocaleTimeString();
             
             const rowHtml = `
-                <td><strong>${data.station || '-'}</strong></td>
-                <td>${data.network || '-'}</td>
+                <td><strong style="color: var(--text-bright);">${data.station || '-'}</strong></td>
+                <td style="color: var(--text-muted);">${data.network || '-'}</td>
                 <td>${triggerTime}</td>
                 <td class="${delay.class}">${delay.text}</td>
             `;
@@ -368,7 +525,8 @@
 
         function handleLocMagData(data) {
             locMagCount++;
-            locMagCountEl.textContent = `${locMagCount} msg`;
+            locMagCountEl.textContent = `${locMagCount} MSG`;
+            kpiLocMagCount.textContent = locMagCount;
 
             let latLong = '-';
             let depth = '-';
@@ -382,10 +540,10 @@
             }
 
             const rowHtml = `
-                <td><strong>${data.station || '-'}</strong></td>
-                <td>${latLong}</td>
+                <td><strong style="color: var(--text-bright);">${data.station || '-'}</strong></td>
+                <td style="color: var(--text-muted);">${latLong}</td>
                 <td>${depth}</td>
-                <td style="color: var(--warning); font-weight: bold;">${mag}</td>
+                <td class="mag-value">${mag}</td>
             `;
             appendRow(locMagTable, rowHtml);
         }
