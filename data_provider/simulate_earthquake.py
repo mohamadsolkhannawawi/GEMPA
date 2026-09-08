@@ -14,22 +14,28 @@ def simulate_earthquake_kafka(station="BKNI", magnitude=6.8, depth=12.5, lat=-6.
     print(f"  -> Magnitudo : M {magnitude}")
     print(f"  -> Lokasi    : Lat {lat}, Lon {lon}, Depth {depth} km")
 
-    try:
-        producer = KafkaProducer(
-            bootstrap_servers=bootstrap_servers,
-            value_serializer=lambda v: json.dumps(v).encode('utf-8')
-        )
-    except Exception as e:
-        print(f"Gagal menghubungkan KafkaProducer ke {bootstrap_servers}: {e}")
-        print("Mencoba fallback bootstrap servers ke container network ('kafka1:9092', 'kafka2:9093', 'kafka3:9094')...")
+    producer = None
+    servers_to_try = [
+        ['localhost:9092', 'localhost:9093', 'localhost:9094'],
+        ['127.0.0.1:9092', '127.0.0.1:9093', '127.0.0.1:9094'],
+        ['kafka1:9092', 'kafka2:9093', 'kafka3:9094']
+    ]
+
+    for servers in servers_to_try:
         try:
             producer = KafkaProducer(
-                bootstrap_servers=['kafka1:9092', 'kafka2:9093', 'kafka3:9094'],
-                value_serializer=lambda v: json.dumps(v).encode('utf-8')
+                bootstrap_servers=servers,
+                value_serializer=lambda v: json.dumps(v).encode('utf-8'),
+                request_timeout_ms=5000
             )
-        except Exception as ex:
-            print(f"Koneksi ke Kafka gagal total: {ex}")
-            return
+            print(f"Berhasil terhubung ke Kafka via {servers}")
+            break
+        except Exception as e:
+            continue
+
+    if not producer:
+        print("ERR: Tidak dapat terhubung ke Kafka Brokers (Host/Docker network).")
+        return
 
     t = time.time()
     
