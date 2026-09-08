@@ -308,6 +308,143 @@
         .delay-warn { color: var(--warn-orange); }
         .delay-bad { color: var(--red-accent); font-weight: bold; }
         .mag-value { color: var(--red-accent); font-weight: bold; }
+
+        /* Emergency Earthquake Alert Modal */
+        .alert-modal-overlay {
+            position: fixed;
+            top: 0; left: 0; width: 100vw; height: 100vh;
+            background: rgba(5, 5, 7, 0.88);
+            backdrop-filter: blur(12px);
+            z-index: 9999;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+
+        .alert-modal-overlay.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .alert-modal-box {
+            background: #0C0C0E;
+            border: 2px solid var(--red-accent);
+            box-shadow: 0 0 50px rgba(255, 30, 39, 0.5);
+            width: 90%;
+            max-width: 500px;
+            padding: 2rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+            animation: modal-shake 0.4s ease-in-out;
+        }
+
+        @keyframes modal-shake {
+            0%, 100% { transform: scale(1); }
+            20% { transform: scale(1.02) translateX(-5px); }
+            40% { transform: scale(1.02) translateX(5px); }
+            60% { transform: scale(1.01) translateX(-3px); }
+            80% { transform: scale(1.01) translateX(3px); }
+        }
+
+        .alert-modal-header {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            border-bottom: 1px solid #2A1015;
+            padding-bottom: 1rem;
+        }
+
+        .alert-siren-dot {
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: var(--red-accent);
+            box-shadow: 0 0 16px var(--red-accent);
+            animation: alert-siren 0.8s infinite alternate;
+        }
+
+        @keyframes alert-siren {
+            0% { opacity: 0.3; transform: scale(0.8); }
+            100% { opacity: 1; transform: scale(1.2); }
+        }
+
+        .alert-title {
+            font-family: 'Space Mono', monospace;
+            font-size: 0.85rem;
+            font-weight: 700;
+            color: var(--red-accent);
+            letter-spacing: 0.12em;
+        }
+
+        .alert-body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 1.25rem;
+            text-align: center;
+        }
+
+        .alert-mag-badge {
+            font-family: 'Space Mono', monospace;
+            font-size: 3.8rem;
+            font-weight: 800;
+            color: var(--red-accent);
+            line-height: 1;
+            text-shadow: 0 0 24px rgba(255, 30, 39, 0.6);
+        }
+
+        .alert-info-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+            width: 100%;
+            background: #141418;
+            padding: 1rem;
+            border: 1px solid var(--panel-border);
+        }
+
+        .alert-info-item {
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+            text-align: left;
+        }
+
+        .alert-info-label {
+            font-family: 'Space Mono', monospace;
+            font-size: 0.65rem;
+            color: var(--text-muted);
+            letter-spacing: 0.1em;
+        }
+
+        .alert-info-val {
+            font-family: 'Space Mono', monospace;
+            font-size: 1rem;
+            font-weight: 700;
+            color: #FFFFFF;
+        }
+
+        .alert-dismiss-btn {
+            width: 100%;
+            background: var(--red-accent);
+            color: #FFFFFF;
+            border: none;
+            padding: 0.85rem;
+            font-family: 'Space Mono', monospace;
+            font-size: 0.85rem;
+            font-weight: 700;
+            letter-spacing: 0.15em;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .alert-dismiss-btn:hover {
+            background: #D9141D;
+        }
     </style>
 </head>
 <body>
@@ -421,6 +558,36 @@
         </div>
     </div>
 
+    <!-- Emergency Earthquake Alert Modal -->
+    <div id="alertModal" class="alert-modal-overlay">
+        <div class="alert-modal-box">
+            <div class="alert-modal-header">
+                <div class="alert-siren-dot"></div>
+                <div class="alert-title">EARTHQUAKE WARNING // PERINGATAN GEMPA BUMI</div>
+            </div>
+            <div class="alert-body">
+                <div class="alert-mag-badge" id="alertMagVal">M 0.0</div>
+                <div class="alert-info-grid">
+                    <div class="alert-info-item">
+                        <span class="alert-info-label">STASIUN SENSOR</span>
+                        <span class="alert-info-val" id="alertStationVal">-</span>
+                    </div>
+                    <div class="alert-info-item">
+                        <span class="alert-info-label">KEDALAMAN</span>
+                        <span class="alert-info-val" id="alertDepthVal">-</span>
+                    </div>
+                    <div class="alert-info-item" style="grid-column: span 2;">
+                        <span class="alert-info-label">KOORDINAT EPISENTER</span>
+                        <span class="alert-info-val" id="alertCoordsVal">-</span>
+                    </div>
+                </div>
+            </div>
+            <div class="alert-footer">
+                <button class="alert-dismiss-btn" onclick="closeAlertModal()">DISMISS ALERT // TUTUP PERINGATAN</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         const statusBadge = document.getElementById('statusBadge');
         const statusText = document.getElementById('statusText');
@@ -499,6 +666,38 @@
             };
         }
 
+        // Audio Siren Alert via Web Audio API
+        function playSirenBeep() {
+            try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(880, ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(440, ctx.currentTime + 0.5);
+                gain.gain.setValueAtTime(0.3, ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.start();
+                osc.stop(ctx.currentTime + 0.5);
+            } catch(e) {}
+        }
+
+        function triggerEarthquakeModal(station, mag, latLong, depth) {
+            document.getElementById('alertMagVal').textContent = mag;
+            document.getElementById('alertStationVal').textContent = station;
+            document.getElementById('alertCoordsVal').textContent = latLong;
+            document.getElementById('alertDepthVal').textContent = depth;
+            
+            document.getElementById('alertModal').classList.add('active');
+            playSirenBeep();
+        }
+
+        function closeAlertModal() {
+            document.getElementById('alertModal').classList.remove('active');
+        }
+
         // Helper function to format delay
         function formatDelay(apiTime) {
             if (!apiTime) return { text: '-', class: '' };
@@ -558,6 +757,7 @@
             let latLong = '-';
             let depth = '-';
             let mag = '-';
+            let magNum = 0;
             
             let preds = data.predictions_loc_mag;
             if (Array.isArray(preds) && preds.length > 0) {
@@ -567,7 +767,8 @@
                 if (preds.length >= 4 && typeof preds[0] === 'number') {
                     latLong = `${preds[0].toFixed(3)}, ${preds[1].toFixed(3)}`;
                     depth = `${preds[2].toFixed(1)} km`;
-                    mag = `M ${preds[3].toFixed(1)}`;
+                    magNum = preds[3];
+                    mag = `M ${magNum.toFixed(1)}`;
                 }
             }
 
@@ -578,6 +779,11 @@
                 <td class="mag-value">${mag}</td>
             `;
             appendRow(locMagTable, rowHtml, 'gempa_fastapi_locmag_html');
+
+            // Trigger Emergency Pop-Up Alert Modal
+            if (magNum >= 4.0) {
+                triggerEarthquakeModal(data.station || 'UNKNOWN', mag, latLong, depth);
+            }
         }
 
         // Initial Connection
