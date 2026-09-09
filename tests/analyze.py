@@ -24,6 +24,17 @@ def read_csv(path):
     if len(rows) > 10:
         rows = rows[10:40]
         
+        # Simpan data clean ke CSV baru
+        dir_name = os.path.dirname(path)
+        base_name = os.path.basename(path)
+        clean_path = os.path.join(dir_name, f"clean_{base_name}")
+        with open(clean_path, mode="w", newline="", encoding="utf-8") as f_clean:
+            if rows:
+                fieldnames = list(rows[0].keys())
+                writer = csv.DictWriter(f_clean, fieldnames=fieldnames)
+                writer.writeheader()
+                writer.writerows(rows)
+        
     columns = defaultdict(list)
     for row in rows:
         for name, value in row.items():
@@ -97,11 +108,14 @@ def save_and_print_table(title, headers, data, filename):
         print(header_format.format(*[str(item) for item in row]))
         
     out_path = os.path.join(RESULTS_DIR, filename)
-    with open(out_path, mode='w', newline='', encoding='utf-8') as f:
-        writer = csv.writer(f)
-        writer.writerow(headers)
-        writer.writerows(data)
-    print(f"(Disimpan ke {filename})")
+    try:
+        with open(out_path, mode='w', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f)
+            writer.writerow(headers)
+            writer.writerows(data)
+        print(f"(Disimpan ke {filename})")
+    except PermissionError:
+        print(f"(GAGAL: File {filename} sedang terbuka di program lain. Harap tutup program tersebut.)")
 
 def analyze_s1():
     scenarios = ["s1_sequential", "s1_multithread", "s1_multiprocess", "s1_mp_mt"]
