@@ -83,7 +83,7 @@ services:
     ports:
       - "8086:8086"
     volumes:
-      - ./influxDB:/var/lib/influxdb2
+      - influxdb_data:/var/lib/influxdb2
     env_file:
       - ./influxDB/.env
     restart: always
