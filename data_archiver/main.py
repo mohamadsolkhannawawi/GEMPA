@@ -19,6 +19,7 @@ from obspy import Trace, Stream, read
 from influxdb_client import InfluxDBClient, Point, WritePrecision
 from influxdb_client.client.write_api import SYNCHRONOUS
 from pymongo import MongoClient
+from filelock import FileLock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from config.settings import (
@@ -190,6 +191,7 @@ def read_existing_mseed(filepath: str) -> Stream:
 
 
 def merge_and_write_mseed(existing_traces: Stream, new_trace: Trace, filepath: str) -> None:
+    """Gabungkan trace baru ke stream dan tulis ke berkas MiniSEED."""
     if existing_traces:
         for tr in list(existing_traces):
             existing_traces.remove(tr)
@@ -230,14 +232,17 @@ def save_data_to_mseed(data: Dict[str, Any]) -> None:
         day_mseed_filename = f"{data['network']}.{data['station']}.{data['location']}.{data['channel']}.{utc_year}.{utc_julian_day}.mseed"
         day_mseed_filepath = os.path.join(path_save_day, day_mseed_filename)
 
-        if not os.path.isfile(day_mseed_filepath):
-            Stream([trace]).write(day_mseed_filepath, format="MSEED")
-        else:
-            try:
-                st1 = read_existing_mseed(day_mseed_filepath)
-                merge_and_write_mseed(st1, trace, day_mseed_filepath)
-            except (UserWarning, Exception) as e:
-                logger.error(f"Error while reading/writing daily MiniSEED file: {e}")
+        # --- Tulis berkas harian MiniSEED dengan penguncian berkas ---
+        lock_day = FileLock(day_mseed_filepath + ".lock")
+        with lock_day:
+            if not os.path.isfile(day_mseed_filepath):
+                Stream([trace]).write(day_mseed_filepath, format="MSEED")
+            else:
+                try:
+                    st1 = read_existing_mseed(day_mseed_filepath)
+                    merge_and_write_mseed(st1, trace, day_mseed_filepath)
+                except (UserWarning, Exception) as e:
+                    logger.error(f"Error while reading/writing daily MiniSEED file: {e}")
 
         date_str = trace.stats.starttime.strftime("%Y.%j")
         fmtstr = '/'.join(
@@ -247,14 +252,17 @@ def save_data_to_mseed(data: Dict[str, Any]) -> None:
 
         filename1 = f"{directory}/{trace.id}.D.{date_str}.mseed"
 
-        if os.path.exists(filename1):
-            try:
-                st2 = read_existing_mseed(filename1)
-                merge_and_write_mseed(st2, trace, filename1)
-            except (UserWarning, Exception) as e:
-                logger.error(f"Error while reading/writing archival MiniSEED file: {e}")
-        else:
-            trace.write(filename1, format='MSEED')
+        # --- Tulis berkas arsip MiniSEED dengan penguncian berkas ---
+        lock_arch = FileLock(filename1 + ".lock")
+        with lock_arch:
+            if os.path.exists(filename1):
+                try:
+                    st2 = read_existing_mseed(filename1)
+                    merge_and_write_mseed(st2, trace, filename1)
+                except (UserWarning, Exception) as e:
+                    logger.error(f"Error while reading/writing archival MiniSEED file: {e}")
+            else:
+                trace.write(filename1, format='MSEED')
 
         end_run_time = time.time()
         duration = end_run_time - start_run_time

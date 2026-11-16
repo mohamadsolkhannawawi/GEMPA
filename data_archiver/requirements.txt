@@ -4,3 +4,4 @@ pymongo==4.10.1
 obspy==1.4.1
 numpy==1.24.4
 prometheus_client==0.21.1
+filelock==3.16.1
