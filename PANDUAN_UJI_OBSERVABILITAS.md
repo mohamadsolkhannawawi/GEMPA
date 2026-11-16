@@ -1,604 +1,390 @@
-# Panduan Pengujian Observabilitas EEWS — Skenario S1 hingga S5
+# Panduan Pengujian Observabilitas Sistem GEMPA — Skenario S1 hingga S5 dan Konfigurasi Akhir
 
-Dokumen ini adalah panduan langkah-demi-langkah untuk melaksanakan seluruh pengujian BAB IV, mulai dari persiapan awal hingga semua file CSV output berhasil dikumpulkan. Skenario S1–S5 telah diurutkan berdasarkan aliran data (Data Flow) dari hulu (Ingestion) hingga ke hilir (Diseminasi).
+Dokumen ini adalah panduan kerja operasional komprehensif untuk melaksanakan seluruh rangkaian pengujian performa sistem GEMPA (*Earthquake Early Warning System* berbasis *microservices*). Panduan ini telah diperbarui secara menyeluruh mengikuti standar perbaikan kode **K1 s.d. K17**, perbaikan logika **A1 s.d. A13**, serta protokol validasi **B1 s.d. B10**.
 
 ---
 
 ## Daftar Isi
 
-1. [Prasyarat dan Persiapan Awal](#1-prasyarat-dan-persiapan-awal)
-2. [Mengambil Source Code](#2-mengambil-source-code)
-3. [Pemasangan Dependensi Python](#3-pemasangan-dependensi-python)
-4. [Validasi Sistem Sebelum Pengujian](#4-validasi-sistem-sebelum-pengujian)
-5. [Panduan Pengambilan Screenshot](#5-panduan-pengambilan-screenshot)
-6. [S1 — Optimasi Hulu (Strategi Konkurensi)](#6-s1--optimasi-hulu-strategi-konkurensi)
-7. [S2 — Validasi Alat Ukur (Overhead Instrumentasi)](#7-s2--validasi-alat-ukur-overhead-instrumentasi)
-8. [S3 — Pemilihan Arsitektur Inti (Load Balancing)](#8-s3--pemilihan-arsitektur-inti-load-balancing)
-9. [S4 — Uji Skalabilitas (Stress Testing)](#9-s4--uji-skalabilitas-stress-testing)
-10. [S5 — Optimasi Hilir (Perbandingan WebSocket)](#10-s5--optimasi-hilir-perbandingan-websocket)
-11. [Menjalankan Semua Skenario Sekaligus](#11-menjalankan-semua-skenario-sekaligus)
-12. [Checklist Output yang Harus Dikumpulkan](#12-checklist-output-yang-harus-dikumpulkan)
-13. [Troubleshooting](#13-troubleshooting)
-14. [Verifikasi Penyimpanan Data ke Database](#14-verifikasi-penyimpanan-data-ke-database)
-15. [Referensi Mapping Skenario ke Compose File](#15-referensi-mapping-skenario-ke-compose-file)
-16. [Panduan Eksekusi Otomatis per Skenario Spesifik](#16-panduan-eksekusi-otomatis-per-skenario-spesifik)
-17. [Daftar Lengkap Perintah Eksekusi per Skenario](#17-daftar-lengkap-perintah-eksekusi-per-skenario)
-18. [Analisis Hasil Pengujian (Otomatis)](#18-analisis-hasil-pengujian-otomatis)
-19. [Menjalankan Aplikasi Dasbor Desktop Seismik (seismic_app)](#19-menjalankan-aplikasi-dasbor-desktop-seismik-seismic_app)
-20. [Verifikasi dan Pengecekan Environment Variables Container](#20-verifikasi-dan-pengecekan-environment-variables-container)
+1. [Prasyarat, Spesifikasi Mesin, dan Persiapan Awal](#1-prasyarat-spesifikasi-mesin-dan-persiapan-awal)
+2. [Landasan Sumber Data Streaming SeedLink & Kuota Kanal](#2-landasan-sumber-data-streaming-seedlink--kuota-kanal)
+3. [Uji Gerbang Validasi — Fase 0 (T0.1 s.d. T0.6)](#3-uji-gerbang-validasi--fase-0-t01-sd-t06)
+4. [Daftar Formula Kueri PromQL Standar (Histogram Agregat & Metrik Baru)](#4-daftar-formula-kueri-promql-standar-histogram-agregat--metrik-baru)
+5. [Protokol Eksekusi Pengujian Skenario S1 hingga S5](#5-protokol-eksekusi-pengujian-skenario-s1-hingga-s5)
+   - [S1 — Strategi Konkurensi Data Provider](#s1--strategi-konkurensi-data-provider)
+   - [S2 — Biaya Overhead Observabilitas Penuh](#s2--biaya-overhead-observabilitas-penuh)
+   - [S3 — Topologi Load Balancing P-Wave (Kafka vs NGINX)](#s3--topologi-load-balancing-p-wave-kafka-vs-nginx)
+   - [S4 — Uji Skalabilitas Beban (Data Archiver & P-Wave 2–6 Replika)](#s4--uji-skalabilitas-beban-data-archiver--p-wave-26-replika)
+   - [S5 — Diseminasi WebSocket (Express.js vs FastAPI)](#s5--diseminasi-websocket-expressjs-vs-fastapi)
+6. [Pengujian Validasi Konfigurasi Akhir Utuh (Subbab 4.8)](#6-pengujian-validasi-konfigurasi-akhir-utuh-subbab-48)
+7. [Uji Ketahanan dan Isolasi Kegagalan (KNF-02 Failover)](#7-uji-ketahanan-dan-isolasi-kegagalan-knf-02-failover)
+8. [Analisis Data Otomatis & Pemodelan USL (analyze.py)](#8-analisis-data-otomatis--pemodelan-usl-analyzepy)
+9. [Daftar Luaran Deliverables yang Wajib Dikumpulkan](#9-daftar-luaran-deliverables-yang-wajib-dikumpulkan)
+10. [Verifikasi Penyimpanan Database & Troubleshooting](#10-verifikasi-penyimpanan-database--troubleshooting)
 
 ---
 
-## 1. Prasyarat dan Persiapan Awal
+## 1. Prasyarat, Spesifikasi Mesin, dan Persiapan Awal
 
-### Software yang Wajib Terinstal
+### A. Spesifikasi Mesin Pengujian (*Host Metadata*)
+Seluruh inferensi model pembelajaran mesin (CNN-LSTM P-Wave) berjalan murni pada CPU host (GPU NVIDIA tidak digunakan):
+- **CPU:** Intel Core i9-14900 (24 Core / 32 Thread; dialokasikan 16 core untuk runtime WSL 2).
+- **RAM:** 64 GB DDR5 (dialokasikan 32 GB untuk WSL 2 + 4 GB swap).
+- **OS:** Windows 11 Pro 64-bit / WSL 2 (Ubuntu 22.04 LTS kernel 5.15+).
+- **Docker:** Docker Desktop v4.34+ (Docker Engine 27.x, Docker Compose v2.29+).
 
-| Software                 | Versi Minimum | Cara Cek                    |
-| ------------------------ | ------------- | --------------------------- |
-| Docker Desktop (Windows) | 4.x           | `docker --version`          |
-| Docker Compose Plugin    | 2.x           | `docker compose version`    |
-| Python                   | 3.10+         | `python --version`          |
-| Git                      | 2.x           | `git --version`             |
-| PowerShell               | 5.1+          | `$PSVersionTable.PSVersion` |
+### B. Software & Environment
+| Software | Versi Minimum | Cara Verifikasi |
+| :--- | :--- | :--- |
+| Docker Desktop | 4.x | `docker --version` |
+| Docker Compose | 2.20+ | `docker compose version` |
+| Python | 3.10 s.d. 3.12 | `python --version` |
+| Git | 2.x | `git --version` |
+| PowerShell | 5.1+ / 7.x | `$PSVersionTable.PSVersion` |
 
-### Spesifikasi Mesin yang Direkomendasikan
-
-- RAM: minimum **16 GB** (seluruh stack berjalan bersamaan bisa menggunakan 8–12 GB)
-- Penyimpanan kosong: minimum **30 GB**
-- CPU: minimum 4 core (8 core untuk skenario multi-container)
-
-### Izin PowerShell (lakukan sekali saja)
-
-```powershell
-Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
-```
-
----
-
-## 2. Mengambil Source Code
-
-### Clone pertama kali
-
-```powershell
-git clone https://github.com/mohamadsolkhannawawi/GEMPA.git
-cd GEMPA
-```
-
-### Update jika sudah pernah clone
-
-```powershell
-cd GEMPA
-git pull origin main
-```
-
-### Siapkan file environment
-
-```powershell
-Copy-Item .env.example .env
-Copy-Item influxDB\.env.example influxDB\.env
-```
-
-> **Catatan:** Jangan pernah meng-commit file `.env`. File ini berisi credential yang bersifat rahasia.
-
-### Validasi konfigurasi
-
-```powershell
-docker compose config
-```
-
-Perintah ini harus selesai tanpa error. Jika ada error, periksa apakah file `.env` dan `influxDB/.env` sudah tersedia.
+### C. Persiapan Direktori & File Konfigurasi
+1. Pastikan Anda berada pada repositori proyek terkini:
+   ```powershell
+   git pull origin main
+   git log -1 --oneline
+   # Pastikan commit hash berada pada 0ca46d7 atau lebih baru
+   ```
+2. Pastikan file `.env` di *root folder* telah terisi token dan parameter standar:
+   - `PWAVE_THRESHOLD=0.9`
+   - `PWAVE_CONSEC=20`
+   - `DATA_PROVIDER_NUM_STATIONS=5984`
+   - `DATA_PROVIDER_MODE=multiprocess`
+   - `STALE_SECONDS=60`
+   - `LB_TARGET_URL=http://nginx_load_balancer:80/trace`
+   - `INFLUXDB_TOKEN=bhIGAk5dlA2gJm1WUG3GmUu_UNtY4G4TVoU2T0vIQBg5o3stlAXsxYoOrKA7ttUhSq8rS3QA1Y-K1wKCTiAGuQ==`
+   - `INFLUXDB_ORG=owner`
+   - `INFLUXDB_BUCKET=gempa`
+3. Pasang pustaka dependensi Python untuk modul pengujian:
+   ```powershell
+   pip install -r tests/requirements.txt
+   ```
 
 ---
 
-## 3. Pemasangan Dependensi Python
+## 2. Landasan Sumber Data Streaming SeedLink & Kuota Kanal
 
-Semua skrip pengumpul metrik membutuhkan library berikut. Pasang sekali saja menggunakan file requirements:
+Pengujian sistem GEMPA menggunakan sumber data aliran langsung (*real-time streaming*) dari server SeedLink GEOFON Potsdam Jerman (`geofon.gfz-potsdam.de:18000`). Tidak ada simulator sintetis atau pemutaran ulang berkas historis (.mseed).
 
-```powershell
-pip install -r tests/requirements.txt
-```
-
-### Verifikasi
-
-```powershell
-python -c "import requests, websockets, docker; print('OK')"
-```
+1. **Validitas SeedLink:** 
+   - **S1:** Menguji kemampuan konkurensi Data Provider dalam menangani I/O penantian jaringan riil.
+   - **S2 s.d. S5:** Variabilitas internet diserap oleh partisi Kafka sebagai *buffer*, sehingga modul hilir menerima beban aliran kerja stabil.
+2. **Penyaring Paket Basi (*Stale Filter*):**
+   - Paket data dengan keterlambatan jaringan $> 60$ detik (`time.time() - endtime > 60`) otomatis disaring dan dicatat pada metrik `data_provider_traces_dropped_stale_total`.
+3. **Standarisasi Kuota Beban (Tepat 5.984 Kanal):**
+   - Kuota kanal dibatasi tepat **5.984 kanal** ($187\text{ kanal/pekerja} \times 32\text{ unit konkurensi}$). Pembagian ini seragam di seluruh mode konkurensi sehingga tidak ada unit pekerja yang menanggung beban sisa (*zero load imbalance*).
 
 ---
 
-## 4. Validasi Sistem Sebelum Pengujian
+## 3. Uji Gerbang Validasi — Fase 0 (T0.1 s.d. T0.6)
 
-Sebelum menjalankan skenario apapun, pastikan sistem berjalan dengan benar menggunakan langkah berikut.
+Sebelum mengeksekusi skenario S1 s.d. S5, jalankan seluruh uji gerbang berikut untuk membuktikan lingkungan pengujian siap dan valid.
 
-### Langkah 4.1 — Jalankan docker compose utama
-
-```powershell
-cd GEMPA
-docker compose up -d --build
-```
-
-Tunggu **60 detik** agar Kafka selesai startup dan memilih leader.
-
-### Langkah 4.2 — Periksa status container
-
-```powershell
-docker compose ps
-```
-
-Container berikut **wajib** berstatus `Up (healthy)` atau `Up`:
-
-| Container                      | Status Wajib |
-| ------------------------------ | ------------ |
-| `zookeeper`                    | Up           |
-| `kafka1`, `kafka2`, `kafka3`   | Up           |
-| `data_provider`                | Up           |
-| `p_wave_detector` (instance-1) | Up           |
-| `loc_mag_detector`             | Up           |
-| `data_archiver` (instance-1)   | Up           |
-| `api_server`                   | Up           |
-| `fast_api`                     | Up           |
-| `prometheus`                   | Up           |
-| `grafana`                      | Up           |
-
-### Langkah 4.3 — Periksa Prometheus dan Status Target Scrape
-
-```powershell
-# Prometheus harus menjawab "Prometheus Server is Ready."
-curl.exe http://localhost:9090/-/ready
-
-# Semua target utama harus bernilai 1
-curl.exe "http://localhost:9090/api/v1/query?query=up" |
-    ConvertFrom-Json |
-    ConvertTo-Json -Depth 100
-```
-
-Buka `http://localhost:9090/targets` di browser. Berikut adalah status ketersediaan target scrape Prometheus pada sistem:
-
-#### Status Scrape Targets Prometheus (`http://localhost:9090/targets`)
-
-| Job Name | State | Up / Total | Endpoint Target | Last Scrape | Scrape Duration | Error / Status Catatan |
-| --- | --- | --- | --- | --- | --- | --- |
-| `api_server` | **DOWN** | 0/1 | `http://api_server:8107/metrics` | ~2.5s ago | 2.481s | `dial tcp: lookup api_server... no such host` (Aktifkan `api_server` jika pengujian memerlukan Express API) |
-| `data_archiver` | **UP** | 3/3 | `http://172.18.0.16:8106/metrics`<br>`http://172.18.0.20:8106/metrics`<br>`http://172.18.0.23:8106/metrics` | ~1.8s ago | 2.6ms – 36.5ms | Target terdeteksi via DNS SD multi-container |
-| `data_provider` | **UP** | 1/1 | `http://data_provider:8101/metrics` | ~934ms ago | 2.866ms | Normal |
-| `fast_api` | **UP** | 1/1 | `http://fast_api:3333/metrics` | ~3.19s ago | 3.428ms | Normal |
-| `load_balancer` | **UP** | 1/1 | `http://load_balancer:8103/metrics` | ~4.43s ago | 3.667ms | Normal |
-| `loc_mag_detector` | **UP** | 1/1 | `http://172.18.0.14:8105/metrics` | ~2.75s ago | 2.124ms | Normal |
-| `node-exporter` | **UP** | 1/1 | `http://node-exporter:9100/metrics` | ~4.3s ago | 12.247ms | Host metrics (docker-host) |
-| `p_wave_detector_load_balance` | **UP** | 5/5 | `http://172.18.0.15:8004/metrics`<br>`http://172.18.0.24:8004/metrics`<br>`http://172.18.0.22:8004/metrics`<br>`http://172.18.0.25:8004/metrics`<br>`http://172.18.0.21:8004/metrics` | ~1.3s - 4.5s ago | 25.1ms – 98.7ms | Multi-instance load balanced |
-| `prometheus` | **UP** | 1/1 | `http://localhost:9090/metrics` | ~3.57s ago | 3.868ms | Self-monitoring |
-| `telegraf-docker` | **UP** | 1/1 | `http://telegraf:9273/metrics` | ~292ms ago | 26.487ms | Container metrics exporter |
-
----
-
-### Daftar Perhitungan Query PromQL Keseluruhan (Prometheus Scraping & Expressions)
-
-Anda dapat melakukan eksekusi query perhitungan ini secara mandiri melalui URL Graf/Query Prometheus:
-[http://localhost:9090/graph?g0.expr=&g0.tab=1&g0.display_mode=lines&g0.show_exemplars=0&g0.range_input=1h](http://localhost:9090/graph?g0.expr=&g0.tab=1&g0.display_mode=lines&g0.show_exemplars=0&g0.range_input=1h)
-
-| No | Key Metrik | Deskripsi & Penggunaan Skenario | Formula / Perhitungan PromQL |
-|---|---|---|---|
-| 1 | `dp_throughput_traces_per_sec` | Throughput sinyal sinyal seismik (traces/detik) yang dikirim oleh Data Provider (S1–S5) | `sum(rate(data_provider_traces_sent_total[1m]))` |
-| 2 | `pwave_inference_latency_p95` | Latensi inferensi P-Wave Detector persentil 95 (Kafka Direct) (S2, S3, S4) | `histogram_quantile(0.95, rate(pwave_inference_latency_seconds_bucket[1m]))` |
-| 3 | `pwave_lb_inference_latency_p95` | Latensi inferensi P-Wave Detector persentil 95 (via Load Balancer NGINX) (S3, S4) | `histogram_quantile(0.95, rate(pwave_lb_inference_latency_seconds_bucket[1m]))` |
-| 4 | `lb_forward_latency_p95` | Latensi forwarding HTTP NGINX Load Balancer persentil 95 (S3) | `histogram_quantile(0.95, rate(lb_forward_latency_seconds_bucket[1m]))` |
-| 5 | `locmag_inference_latency_p95` | Latensi inferensi Location & Magnitude Detector persentil 95 (S2) | `histogram_quantile(0.95, rate(locmag_inference_latency_seconds_bucket[1m]))` |
-| 6 | `e2e_delay_pwave_p95` | Latensi total End-to-End P-Wave Detector persentil 95 (S2, S3) | `histogram_quantile(0.95, rate(pwave_end_to_end_latency_seconds_bucket[1m]))` |
-| 7 | `e2e_delay_locmag_p95` | Latensi total End-to-End Location/Magnitude Detector persentil 95 (S2) | `histogram_quantile(0.95, rate(locmag_end_to_end_latency_seconds_bucket[1m]))` |
-| 8 | `ws_broadcast_latency_p95` | Latensi broadcast pengiriman pesan WebSocket Express.js persentil 95 (S5) | `histogram_quantile(0.95, rate(ws_broadcast_latency_seconds_bucket[1m]))` |
-| 9 | `fastapi_ws_broadcast_latency_p95` | Latensi broadcast pengiriman pesan WebSocket FastAPI persentil 95 (S5) | `histogram_quantile(0.95, rate(fastapi_ws_broadcast_latency_seconds_bucket[1m]))` |
-| 10 | `active_ws_clients_express` | Jumlah klien WebSocket aktif di server Express.js (S5) | `ws_active_clients` |
-| 11 | `active_ws_clients_fastapi` | Jumlah klien WebSocket aktif di server FastAPI (S5) | `fastapi_ws_active_clients` |
-| 12 | `pwave_aggregate_cpu_percent` | Akumulasi konsumsi CPU (%) seluruh kontainer P-Wave Detector (Telegraf) (S1–S5) | `sum(docker_container_cpu_usage_percent{container_name=~".*p_wave_detector.*"})` |
-| 13 | `pwave_aggregate_mem_mb` | Akumulasi penggunaan RAM (MB) seluruh kontainer P-Wave Detector (Telegraf) (S1–S5) | `sum(docker_container_mem_usage{container_name=~".*p_wave_detector.*"}) / 1048576` |
-| 14 | `archiver_aggregate_cpu_percent` | Akumulasi konsumsi CPU (%) seluruh kontainer Data Archiver (Telegraf) (S4) | `sum(docker_container_cpu_usage_percent{container_name=~".*data_archiver.*"})` |
-| 15 | `archiver_aggregate_mem_mb` | Akumulasi penggunaan RAM (MB) seluruh kontainer Data Archiver (Telegraf) (S4) | `sum(docker_container_mem_usage{container_name=~".*data_archiver.*"}) / 1048576` |
-| 16 | `host_cpu_usage_percent` | Persentase total konsumsi CPU Host Node Exporter | `100 - (avg(rate(node_cpu_seconds_total{mode="idle"}[1m])) * 100)` |
-| 17 | `prometheus_target_up` | Status aktif/tidaknya target scrape (1 = UP, 0 = DOWN) | `up` |
-
----
-
-### Langkah 4.4 — Periksa Grafana
-
-Buka `http://localhost:4000`. Login dengan `admin` / `12345678`. Pastikan dashboard **EEWS Observability** muncul dan panelnya menampilkan data.
-
-### Langkah 4.5 — Periksa endpoint WebSocket dan metrik
-
-```powershell
-curl.exe http://localhost:3333
-curl.exe http://localhost:3334/health
-curl.exe http://localhost:8107/metrics
-```
-
-### URL Lengkap untuk Validasi
-
-| Komponen             | URL                             | Login                |
-| -------------------- | ------------------------------- | -------------------- |
-| Express WebSocket UI | `http://localhost:3333`         | —                    |
-| FastAPI WebSocket UI | `http://localhost:3334`         | —                    |
-| Express Metrics      | `http://localhost:8107/metrics` | —                    |
-| FastAPI Metrics      | `http://localhost:8108/metrics` | —                    |
-| Prometheus Targets   | `http://localhost:9090/targets` | —                    |
-| Prometheus Graph     | `http://localhost:9090/graph`   | —                    |
-| Grafana              | `http://localhost:4000`         | `admin` / `12345678` |
-| InfluxDB             | `http://localhost:8086`         | `admin` / `12345678` |
-| Mongo Express        | `http://localhost:8081`         | `admin` / `password` |
-
----
-
-## 5. Panduan Pengambilan Screenshot
-
-Screenshot berikut wajib diambil **satu kali** setelah validasi sistem berhasil (Langkah 4), dan dapat dipakai untuk semua skenario.
-
-| No  | Yang Difoto                             | Cara Mengambil                                                            |
-| --- | --------------------------------------- | ------------------------------------------------------------------------- |
-| 1   | Hasil `docker compose ps`               | Buka PowerShell, jalankan perintah, screenshot terminal                   |
-| 2   | Halaman `http://localhost:3333`         | Browser, tampilkan data trace                                             |
-| 3   | Halaman `http://localhost:3334`         | Browser, tampilkan koneksi WebSocket                                      |
-| 4   | Halaman `http://localhost:8107/metrics` | Browser, tampilkan teks metrik mentah Prometheus                          |
-| 5   | Halaman `http://localhost:9090/targets` | Browser, semua target harus UP (hijau)                                    |
-| 6   | Prometheus Graph dengan query `up`      | Ketik `up` di kotak query, klik Execute                                   |
-| 7   | Prometheus Graph CPU                    | Query: `100 - (avg(rate(node_cpu_seconds_total{mode="idle"}[1m])) * 100)` |
-| 8   | Grafana dashboard EEWS                  | Pilih time range **Last 15 minutes**                                      |
-| 9   | InfluxDB Data Explorer                  | Buka bucket `eews`                                                        |
-| 10  | Mongo Express                           | Buka collection data                                                      |
-
-> **Penting:** Jangan tampilkan password, token, atau isi file `.env` pada screenshot manapun.
-
----
-
-## 6. S1 — Optimasi Hulu (Strategi Konkurensi)
-
-**Tujuan:** Mengevaluasi mekanisme konkurensi (sekuensial, multi-thread, multi-process, atau gabungan) pada tahap ingesti data untuk mencegah data starvation di Kafka.
-
-**Compose file yang digunakan:** `docker-compose-s1-sequential.yml` hingga `docker-compose-s1-mp_mt.yml`
-
-**Output yang dihasilkan:**
-- `tests/results/s1_sequential_stats.csv` & `metrics.csv`
-- `tests/results/s1_multithread_stats.csv` & `metrics.csv`
-- `tests/results/s1_multiprocess_stats.csv` & `metrics.csv`
-- `tests/results/s1_mp_mt_stats.csv` & `metrics.csv`
-
-### Cara Menjalankan S1 (Otomatis)
-
+### T0.1 — Uji Unit Normalisasi & Ambang Deteksi P-Wave
+Buktikan bahwa `normalize_batch` dan `detect` pada `utils/pwave_common.py` menghasilkan keluaran identik dan deterministik:
 ```powershell
 cd tests
-
-# Menjalankan seluruh variasi S1 sekaligus secara berurutan:
-.\run_s1_dataprovider.ps1
-
-# ATAU, jalankan salah satu variasi berikut secara spesifik:
-.\run_s1_dataprovider.ps1 -ScenarioName Sequential
-.\run_s1_dataprovider.ps1 -ScenarioName Multithread
-.\run_s1_dataprovider.ps1 -ScenarioName Multiprocess
-.\run_s1_dataprovider.ps1 -ScenarioName MP_MT
+python -c "import sys; sys.path.insert(0, '..'); import numpy as np; from utils.pwave_common import normalize_batch, detect; d=np.random.randn(5,160,3); assert normalize_batch(d).shape==(5,160,3); p=np.zeros(50); p[10:30]=0.95; idx,m=detect(p,0.9,20); assert idx==10; print('T0.1 PASS')"
 ```
+
+### T0.2 — Verifikasi Partisi Topik Kafka Deterministik
+Buktikan bahwa layanan `kafka-init` membuat topik dengan jumlah partisi dan *replication factor* (RF) sesuai desain:
+```powershell
+cd ..
+docker compose -f docker-compose-s3-kafka.yml up -d zookeeper kafka1 kafka2 kafka3 kafka-init
+docker exec kafka1 kafka-topics --bootstrap-server kafka1:9092 --describe
+```
+*Kriteria Lolos:*
+- `trace_topic`: 5 partisi, PartitionCount: 5, ReplicationFactor: 2.
+- `p_wave_topic`: 5 partisi, PartitionCount: 5, ReplicationFactor: 1.
+- `loc_mag_topic`: 3 partisi, PartitionCount: 3, ReplicationFactor: 1.
+- `result_loc_mag_topic`: 3 partisi, PartitionCount: 3, ReplicationFactor: 1.
+
+Bersihkan kontainer uji:
+```powershell
+docker compose -f docker-compose-s3-kafka.yml down -v
+```
+
+### T0.3 — Uji Perataan Beban Load Balancer (< 10% Skew)
+Jalankan NGINX Load Balancer dengan 3 replika P-Wave, kirim 1.000 permintaan uji sintesis, dan verifikasi distribusi:
+```powershell
+# Jalankan S3 NGINX
+docker compose -f docker-compose-s3-nginx.yml up -d
+# Periksa metrik perataan beban di Prometheus:
+# Query: sum by (replica) (rate(lb_forwarded_by_replica_total[1m]))
+# Selisih distribusi antarreplika wajib < 10%.
+docker compose -f docker-compose-s3-nginx.yml down -v
+```
+
+### T0.4 — Verifikasi Agregasi Histogram PromQL `sum by (le)`
+Pastikan kueri persentil 95 pada Prometheus menggunakan sintaks agregasi lintas replika:
+`histogram_quantile(0.95, sum by (le) (rate(pwave_inference_latency_seconds_bucket[1m])))`
+Hasil kueri wajib menghasilkan deret tunggal teragregasi.
+
+### T0.5 — Uji Ketahanan 5 Replika Kontainer Native (Bebas OOM)
+Nyalakan 5 replika kontainer Native P-Wave selama 10 menit. Periksa metadata status kontainer:
+```powershell
+docker inspect --format='{{.Name}}: OOMKilled={{.State.OOMKilled}} Restarts={{.RestartCount}}' $(docker ps -aq --filter "name=p_wave_detector")
+```
+*Kriteria Lolos:* `OOMKilled=false` dan `Restarts=0` pada seluruh 5 replika.
+
+### T0.6 — Verifikasi Rebalance Kafka Consumer Group
+Catat proses rebalance partisi saat replika ditambahkan dari 2 ke 3, pastikan tidak terjadi *deadlock* konsumsi.
 
 ---
 
-## 7. S2 — Validasi Alat Ukur (Overhead Instrumentasi)
+## 4. Daftar Formula Kueri PromQL Standar (Histogram Agregat & Metrik Baru)
 
-**Tujuan:** Mengukur selisih CPU (%), memori (MB), dan latensi (ms) antara sistem _tanpa_ instrumentasi Prometheus dan sistem _dengan_ instrumentasi Prometheus sebagai Margin of Error.
+Semua kueri latensi wajib menggunakan `sum by (le)` agar mewakili seluruh replika secara proporsional.
 
-**Compose file yang digunakan:** `docker-compose-s2-no_metrics.yml` dan `docker-compose-s2-with_metrics.yml`
-
-**Output yang dihasilkan:**
-- `tests/results/s2_overhead_no_metrics_stats.csv`
-- `tests/results/s2_overhead_with_metrics_stats.csv`
-
-### Cara Menjalankan S2 (Otomatis)
-
-```powershell
-cd tests
-# Jalankan salah satu dari parameter berikut sesuai kebutuhan:
-.\run_s2_overhead.ps1 -ScenarioName NoMetrics
-.\run_s2_overhead.ps1 -ScenarioName WithMetrics
-```
-
----
-
-## 8. S3 — Pemilihan Arsitektur Inti (Load Balancing)
-
-**Tujuan:** Membandingkan arsitektur message broker Kafka native (3 broker) secara head-to-head versus Kafka+NGINX sebagai HTTP load balancer eksternal untuk P-Wave Detector.
-
-**Compose file yang digunakan:**
-- Kafka Native: `docker-compose-s3-kafka.yml`
-- Kafka + NGINX: `docker-compose-s3-nginx.yml`
-
-**Output yang dihasilkan:**
-- `tests/results/s3_broker_kafka_stats.csv` & `metrics.csv`
-- `tests/results/s3_broker_nginx_stats.csv` & `metrics.csv`
-
-### Cara Menjalankan S3 (Otomatis)
-
-```powershell
-cd tests
-# Jalankan salah satu dari parameter berikut sesuai kebutuhan:
-.\run_s3_broker.ps1 -ScenarioName Kafka
-.\run_s3_broker.ps1 -ScenarioName NGINX
-```
+| No | Metrik Evaluasi | Rumus PromQL Standar | Deskripsi & Tujuan |
+| :--- | :--- | :--- | :--- |
+| 1 | **Throughput Trace (Hulu)** | `sum(rate(data_provider_traces_sent_total{topic="trace_topic"}[1m]))` | Laju paket sinyal seismik masuk ke broker. |
+| 2 | **Throughput P-Wave Topic** | `sum(rate(data_provider_traces_sent_total{topic="p_wave_topic"}[1m]))` | Laju paket yang dialirkan ke topik inferensi P-Wave. |
+| 3 | **Paket Basi Tersaring** | `sum(rate(data_provider_traces_dropped_stale_total[1m]))` | Paket yang dibuang karena delay jaringan $> 60$s. |
+| 4 | **Laju Deteksi $C(N)$** | `sum(rate(pwave_inference_latency_seconds_count[1m]))` | Kapasitas inferensi aktual P-Wave (Native). |
+| 5 | **Laju Deteksi LB $C(N)$** | `sum(rate(pwave_lb_inference_latency_seconds_count[1m]))` | Kapasitas inferensi aktual P-Wave (NGINX Mode). |
+| 6 | **Latensi Inferensi P95** | `histogram_quantile(0.95, sum by (le) (rate(pwave_inference_latency_seconds_bucket[1m])))` | Durasi murni eksekusi model CNN-LSTM (Native). |
+| 7 | **Latensi Inferensi LB P95** | `histogram_quantile(0.95, sum by (le) (rate(pwave_lb_inference_latency_seconds_bucket[1m])))` | Durasi inferensi model CNN-LSTM (NGINX Mode). |
+| 8 | **Penundaan Kafka P95** | `histogram_quantile(0.95, sum by (le) (rate(pwave_kafka_delay_seconds_bucket[1m])))` | Waktu transit pesan di broker sebelum diambil worker. |
+| 9 | **Antrean Worker P95** | `histogram_quantile(0.95, sum by (le) (rate(pwave_queue_wait_seconds_bucket[1m])))` | Waktu tunggu paket dalam antrean internal worker. |
+| 10 | **Latensi Forward LB P95** | `histogram_quantile(0.95, sum by (le) (rate(lb_forward_latency_seconds_bucket[1m])))` | Waktu penerusan HTTP dari LB ke NGINX replika. |
+| 11 | **Latensi End-to-End P95** | `histogram_quantile(0.95, sum by (le) (rate(pwave_end_to_end_latency_seconds_bucket[1m])))` | Waktu total dari stempel waktu hulu hingga inferensi selesai. |
+| 12 | **Kapasitas Archiver** | `sum(rate(archiver_records_saved_total{storage="influxdb"}[1m]))` | Laju penulisan rekaman bersih ke InfluxDB. |
+| 13 | **Latensi Broadcast WS P95**| `histogram_quantile(0.95, sum by (le) (rate(ws_broadcast_latency_seconds_bucket[1m])))` | Durasi broadcast Socket.IO Express (nanodetik/ms). |
+| 14 | **Latensi Broadcast FastAPI**| `histogram_quantile(0.95, sum by (le) (rate(fastapi_ws_broadcast_latency_seconds_bucket[1m])))`| Durasi broadcast WebSocket FastAPI (`perf_counter`). |
+| 15 | **CPU Worker P-Wave (%)** | `sum(docker_container_cpu_usage_percent{container_name=~".*p_wave_detector.*"})` | Beban CPU seluruh pekerja P-Wave Detector. |
+| 16 | **RAM Worker P-Wave (MB)** | `sum(docker_container_mem_usage{container_name=~".*p_wave_detector.*"}) / 1048576` | Penggunaan memori fisik pekerja P-Wave. |
+| 17 | **Biaya CPU Stack Observabilitas** | `sum(docker_container_cpu_usage_percent{container_name=~".*(prometheus|grafana|telegraf|node-exporter).*"})` | Total beban observabilitas penuh (S2). |
+| 18 | **Biaya RAM Stack Observabilitas** | `sum(docker_container_mem_usage{container_name=~".*(prometheus|grafana|telegraf|node-exporter).*"}) / 1048576` | Total memori observabilitas penuh (S2). |
+| 19 | **Lag Antrean Kafka** | `sum(kafka_consumergroup_lag)` | Akumulasi lag antrean partisi dari `kafka-exporter`. |
 
 ---
 
-## 9. S4 — Uji Skalabilitas (Stress Testing)
+## 5. Protokol Eksekusi Pengujian Skenario S1 hingga S5
 
-**Tujuan:** Mencari titik jenuh komputasi (CPU Bound) pada P-Wave Detector dan hambatan I/O (I/O Bound) pada Data Archiver dengan menaikkan jumlah kontainer secara bertahap (1 hingga 5).
-
-**Compose file yang digunakan:**
-- Data Archiver (1–5 container): `docker-compose-s4-archiver-1c.yml` hingga `5c.yml`
-- P-Wave Detector Kafka (2–5 container): `docker-compose-s4-pwave-kafka-2c.yml` hingga `5c.yml`
-- P-Wave Detector Kafka-NGINX (2–5 container): `docker-compose-s4-pwave-kafka-nginx-2c.yml` hingga `5c.yml`
-
-**Output yang dihasilkan:**
-- Data Archiver: `tests/results/s4_archiver_1_container_stats.csv` dsb.
-- P-Wave Kafka: `tests/results/s4_pwave_kafka_2c_stats.csv` dsb.
-- P-Wave Kafka-NGINX: `tests/results/s4_pwave_kafka_nginx_2c_stats.csv` dsb.
-
-### Cara Menjalankan S4 (Otomatis)
-
-```powershell
-cd tests
-
-# Menjalankan seluruh variasi Archiver sekaligus:
-.\run_s4_scalability_archiver.ps1
-
-# Menjalankan seluruh variasi P-Wave sekaligus:
-.\run_s4_scalability_pwave.ps1
-
-# ATAU jalankan variasi spesifik:
-.\run_s4_scalability_archiver.ps1 -ScenarioName 1c
-.\run_s4_scalability_pwave.ps1 -ScenarioName Kafka2c
-.\run_s4_scalability_pwave.ps1 -ScenarioName KafkaNginx2c
-```
-
----
-
-## 10. S5 — Optimasi Hilir (Perbandingan WebSocket)
-
-**Tujuan:** Membandingkan performa Express.js/Socket.IO versus FastAPI dalam menangani diseminasi koneksi WebSocket pada 1 client dan 5 client konkuren.
-
-**Compose file yang digunakan:**
-- Express.js: `docker-compose-s5-express.yml`
-- FastAPI: `docker-compose-s5-fastapi.yml`
-
-**Output yang dihasilkan:**
-- `tests/results/s5_websocket_express_1c_stats.csv` & `metrics.csv`
-- `tests/results/s5_websocket_express_5c_stats.csv` & `metrics.csv`
-- `tests/results/s5_websocket_fastapi_1c_stats.csv` & `metrics.csv`
-- `tests/results/s5_websocket_fastapi_5c_stats.csv` & `metrics.csv`
-
-### Cara Menjalankan S5 (Otomatis)
-
-```powershell
-cd tests
-# Jalankan salah satu dari parameter berikut sesuai kebutuhan:
-.\run_s5_websocket.ps1 -ScenarioName Express1c
-.\run_s5_websocket.ps1 -ScenarioName Express5c
-.\run_s5_websocket.ps1 -ScenarioName FastAPI1c
-.\run_s5_websocket.ps1 -ScenarioName FastAPI5c
-```
-
----
-
-## 11. Menjalankan Semua Skenario Sekaligus
-
-Jika Anda ingin menjalankan S1 hingga S5 secara berurutan tanpa intervensi manual, gunakan master runner:
-
-```powershell
-cd tests
-.\run_all_tests.ps1
-```
-
-> **Perhatian:** Proses ini membutuhkan estimasi **1,5 hingga 3 jam** tergantung spesifikasi mesin. Pastikan komputer tidak masuk mode tidur (_sleep_) selama eksekusi.
-
-Untuk mencegah komputer tidur saat tes berjalan panjang:
-
-```powershell
-while ($true) { [System.Console]::Write("."); Start-Sleep -Seconds 60 }
-```
-
----
-
-## 12. Checklist Output yang Harus Dikumpulkan
-
-Tandai setiap item setelah berhasil dikumpulkan.
-
-### File CSV per Skenario
-
-**S1 — Optimasi Hulu (Strategi Konkurensi):**
-- [ ] `s1_sequential_metrics.csv`
-- [ ] `s1_multithread_metrics.csv`
-- [ ] `s1_multiprocess_metrics.csv`
-- [ ] `s1_mp_mt_metrics.csv`
-
-**S2 — Validasi Alat Ukur (Overhead):**
-- [ ] `s2_overhead_no_metrics_metrics.csv`
-- [ ] `s2_overhead_with_metrics_metrics.csv`
-
-**S3 — Pemilihan Arsitektur Inti (Load Balancer):**
-- [ ] `s3_broker_kafka_metrics.csv`
-- [ ] `s3_broker_nginx_metrics.csv`
-
-**S4 — Uji Skalabilitas (Data Archiver 1-5c):**
-- [ ] `s4_archiver_1_container_metrics.csv` (hingga `5_container`)
-
-**S4 — Uji Skalabilitas (P-Wave Kafka 2-5c):**
-- [ ] `s4_pwave_kafka_2c_metrics.csv` (hingga `5c`)
-
-**S4 — Uji Skalabilitas (P-Wave Kafka-NGINX 2-5c):**
-- [ ] `s4_pwave_kafka_nginx_2c_metrics.csv` (hingga `5c`)
-
-**S5 — Optimasi Hilir (WebSocket Express vs FastAPI):**
-- [ ] `s5_websocket_express_1c_metrics.csv`
-- [ ] `s5_websocket_express_5c_metrics.csv`
-- [ ] `s5_websocket_fastapi_1c_metrics.csv`
-- [ ] `s5_websocket_fastapi_5c_metrics.csv`
-
----
-
-## 13. Troubleshooting
-
-### Pengecekan Log Error per Modul
-
-Filter Semua Error Terkini Sekaligus (5 Menit Terakhir):
-```powershell
-docker compose logs --since 5m | Select-String "ERROR", "Exception", "Traceback"
-```
-
-Pengecekan Error Terkini per Modul Spesifik:
-```powershell
-# Data Provider
-docker compose logs data_provider --since 5m | Select-String "ERROR"
-
-# AI Detectors
-docker compose logs p_wave_detector --since 5m | Select-String "ERROR"
-docker compose logs loc_mag_detector --since 5m | Select-String "ERROR"
-
-# Backend & APIs
-docker compose logs data_archiver --since 5m | Select-String "ERROR"
-docker compose logs api_server --since 5m | Select-String "ERROR"
-docker compose logs fast_api --since 5m | Select-String "ERROR"
-
-# Infrastruktur Inti
-docker compose logs kafka1 --since 5m | Select-String "ERROR"
-```
-
----
-
-## 14. Verifikasi Penyimpanan Data ke Database
-
-### A. Verifikasi InfluxDB (Penyimpanan Data Gelombang & Metrik)
-```powershell
-# Cek data gelombang seismik terbaru (bucket `eews`)
-docker compose exec influxdb influx query 'from(bucket: \"eews\") |> range(start: -1m) |> tail(n: 10)' --token "eFWu0UGcCzvGAX1w-z43heHjfDk8swujfryImhIsTrAkNJOgfMRSYsgYVki-QTiWHDwKLJtxsSnCmHhxisCN1w==" --org "owner"
-```
-
-### B. Verifikasi MongoDB (Penyimpanan Hasil Deteksi AI)
-```powershell
-docker compose exec mongo mongosh
-test> use timeseries_db
-timeseries_db> db.timeseries_collection.find().sort({_id: -1}).limit(1)
-```
-
-### C. Verifikasi Prometheus (Penyimpanan Metrik Observabilitas)
-Buka `http://localhost:9090` dan uji query: `data_provider_traces_sent_total`.
-
----
-
-## 15. Referensi Mapping Skenario ke Compose File
-
-| Kode Skenario (BAB III)     | Compose File              | Script Otomatis                |
-| --------------------------- | ------------------------- | ------------------------------ |
-| S1 — Strategi Konkurensi    | `docker-compose-s1-*.yml` | `run_s1_dataprovider.ps1`      |
-| S2 — Overhead Instrumentasi | `docker-compose-s2-*.yml` | `run_s2_overhead.ps1`          |
-| S3 — Arsitektur (Load Bal)  | `docker-compose-s3-*.yml` | `run_s3_broker.ps1`            |
-| S4 — Skala Archiver (1-5 C) | `docker-compose-s4-archiver-*.yml` | `run_s4_scalability_archiver.ps1` |
-| S4 — Skala P-Wave (2-5 C)   | `docker-compose-s4-pwave-*.yml`    | `run_s4_scalability_pwave.ps1`    |
-| S5 — Diseminasi WebSocket   | `docker-compose-s5-*.yml` | `run_s5_websocket.ps1`         |
-
----
-
-## 16. Panduan Eksekusi Otomatis per Skenario Spesifik
-
-Jika Anda ingin menjalankan **hanya satu tipe skenario tertentu**, gunakan argumen `-ScenarioName` diikuti nama pendek skenario tersebut.
-
-Contoh:
-```powershell
-.\run_s1_dataprovider.ps1 -ScenarioName Multiprocess
-```
-
----
-
-## 17. Daftar Lengkap Perintah Eksekusi per Skenario
-
-Seluruh perintah di bawah ini harus dijalankan di dalam direktori `tests`.
+Seluruh skrip pengujian berada di dalam direktori `tests`. Jalankan perintah pengujian dengan protokol baku:
+- **`-Repeat 3`**: Pengujian wajib diulang sebanyak 3 kali per konfigurasi.
+- **`-Shuffle`**: Urutan skenario diacak otomatis guna meminimalkan efek *caching* dan bias termal CPU.
+- **`Wait-SystemReady`**: Gerbang kesiapan aktif secara otomatis memvalidasi kesiapan Kafka dan Prometheus sebelum pencatatan metrik dimulai.
+- **Fairness Window (Detik 50–200)**: Analisis metrik membuang 50 detik pertama (transien *warmup*) dan mengambil 150 detik fase stabil (*steady-state*).
+- **`--dump-buckets`**: Nilai kumulatif seluruh bucket histogram tersimpan ke CSV mentah untuk verifikasi P95 sejati.
+- **Jeda Pendinginan (*Cooldown*)**: Skrip otomatis memberi jeda 120 detik antar-run untuk pembersihan memori.
 
 ```powershell
 cd tests
 ```
 
-### S1. Strategi Konkurensi Data Provider
+---
+
+### S1 — Strategi Konkurensi Data Provider
+Mengevaluasi 4 mekanisme *ingestion*: Sekuensial, Multi-Threading, Multi-Processing, dan Gabungan (MP+MT) pada kuota 5.984 kanal.
+
 ```powershell
-.\run_s1_dataprovider.ps1 -ScenarioName Sequential
-.\run_s1_dataprovider.ps1 -ScenarioName Multithread
-.\run_s1_dataprovider.ps1 -ScenarioName Multiprocess
-.\run_s1_dataprovider.ps1 -ScenarioName MP_MT
+# Eksekusi 3x pengulangan acak
+.\run_s1_dataprovider.ps1 -Repeat 3 -Shuffle
+
+# ATAU eksekusi variasi individual:
+.\run_s1_dataprovider.ps1 -ScenarioName Sequential -Repeat 3
+.\run_s1_dataprovider.ps1 -ScenarioName Multithread -Repeat 3
+.\run_s1_dataprovider.ps1 -ScenarioName Multiprocess -Repeat 3
+.\run_s1_dataprovider.ps1 -ScenarioName MP_MT -Repeat 3
+```
+*Luaran:* `tests/results/s1_*_metrics.csv` dan `*_dump_buckets.csv`.
+
+---
+
+### S2 — Biaya Overhead Observabilitas Penuh
+Mengukur beban instrumentasi aplikasi dan beban *full stack* observabilitas (`prometheus`, `grafana`, `telegraf`, `node-exporter`):
+
+```powershell
+# Eksekusi 3x pengulangan acak
+.\run_s2_overhead.ps1 -Repeat 3 -Shuffle
+
+# ATAU eksekusi kondisi spesifik:
+.\run_s2_overhead.ps1 -ScenarioName NoMetrics -Repeat 3
+.\run_s2_overhead.ps1 -ScenarioName WithMetrics -Repeat 3
+```
+*Luaran:* `tests/results/s2_overhead_*_metrics.csv` dan log Telegraf host.
+
+---
+
+### S3 — Topologi Load Balancing P-Wave (Kafka vs NGINX)
+Membandingkan pembagian beban berbasis *Consumer Group* (Kafka Native) versus *HTTP Round-Robin* (NGINX Load Balancer) pada 3 replika pekerja P-Wave:
+
+```powershell
+# Eksekusi 3x pengulangan acak
+.\run_s3_broker.ps1 -Repeat 3 -Shuffle
+
+# ATAU eksekusi per topologi:
+.\run_s3_broker.ps1 -ScenarioName Kafka -Repeat 3
+.\run_s3_broker.ps1 -ScenarioName NGINX -Repeat 3
+```
+*Luaran:* `tests/results/s3_broker_*_metrics.csv`.
+
+---
+
+### S4 — Uji Skalabilitas Beban (Data Archiver & P-Wave 2–6 Replika)
+Mengevaluasi skalabilitas horizontal dan membuktikan titik jenuh komputasi Universal Scalability Law (USL):
+
+#### A. Skalabilitas Data Archiver (1 s.d. 5 Kontainer)
+```powershell
+.\run_s4_scalability_archiver.ps1 -Repeat 3
 ```
 
-### S2. Overhead Instrumentasi
+#### B. Skalabilitas P-Wave Detector (2 s.d. 5 Replika Native & 2 s.d. 6 Replika NGINX)
+Khusus NGINX, pengujian menyertakan **6 replika** (`docker-compose-s4-pwave-kafka-nginx-6c.yml`) untuk memvalidasi titik puncak optimal $N^* = 6{,}40$:
 ```powershell
-.\run_s2_overhead.ps1 -ScenarioName NoMetrics
-.\run_s2_overhead.ps1 -ScenarioName WithMetrics
-```
+.\run_s4_scalability_pwave.ps1 -Repeat 3
 
-### S3. Load Balancer Message Broker
-```powershell
-.\run_s3_broker.ps1 -ScenarioName Kafka
-.\run_s3_broker.ps1 -ScenarioName NGINX
+# ATAU eksekusi konfigurasi tertentu:
+.\run_s4_scalability_pwave.ps1 -ScenarioName Kafka2c -Repeat 3
+.\run_s4_scalability_pwave.ps1 -ScenarioName KafkaNginx6c -Repeat 3
 ```
+*Luaran:* `tests/results/s4_archiver_*_metrics.csv` dan `tests/results/s4_pwave_*_metrics.csv`.
 
-### S4. Skalabilitas Data Archiver
+---
+
+### S5 — Diseminasi WebSocket (Express.js vs FastAPI)
+Membandingkan performa *broadcast* data gempa ke 1 klien dan 5 klien konkuren:
+
 ```powershell
-.\run_s4_scalability_archiver.ps1 -ScenarioName 1c
-.\run_s4_scalability_archiver.ps1 -ScenarioName 5c
+# Eksekusi 3x pengulangan acak
+.\run_s5_websocket.ps1 -Repeat 3 -Shuffle
+
+# ATAU eksekusi variasi individual:
+.\run_s5_websocket.ps1 -ScenarioName Express1c -Repeat 3
+.\run_s5_websocket.ps1 -ScenarioName Express5c -Repeat 3
+.\run_s5_websocket.ps1 -ScenarioName FastAPI1c -Repeat 3
+.\run_s5_websocket.ps1 -ScenarioName FastAPI5c -Repeat 3
 ```
+*Luaran:* `tests/results/s5_websocket_*_metrics.csv` dan ringkasan latensi sisi klien.
 
-### S4. Skalabilitas P-Wave Detector
-```powershell
-.\run_s4_scalability_pwave.ps1 -ScenarioName Kafka2c
-.\run_s4_scalability_pwave.ps1 -ScenarioName KafkaNginx2c
-```
+---
 
-### S5. WebSocket Server Diseminasi
+## 6. Pengujian Validasi Konfigurasi Akhir Utuh (Subbab 4.8)
+
+Untuk membuktikan performa arsitektur produksi final sistem GEMPA yang direkomendasikan pada Subbab 4.8:
+- **Data Provider:** Mode Multiprocess (5.984 kanal).
+- **Arsitektur P-Wave:** NGINX Load Balancer dengan 5 Replika ML Worker.
+- **Penyimpanan:** 3 Replika Data Archiver (InfluxDB & MongoDB).
+- **Diseminasi:** FastAPI WebSocket.
+- **Keandalan:** Kontainer `restarter` berkala aktif merestart worker secara bergilir setiap 600 detik tanpa memutus aliran sistem.
+
+Eksekusi 3 kali pengulangan (masing-masing 300 detik):
 ```powershell
-.\run_s5_websocket.ps1 -ScenarioName Express1c
-.\run_s5_websocket.ps1 -ScenarioName Express5c
-.\run_s5_websocket.ps1 -ScenarioName FastAPI1c
-.\run_s5_websocket.ps1 -ScenarioName FastAPI5c
+cd ..
+# Run 1
+docker compose -f docker-compose-final.yml up -d --build
+python tests/collect_metrics.py --duration 300 --interval 5 --output tests/results/final_production_run1.csv --dump-buckets
+docker compose -f docker-compose-final.yml down -v
+Start-Sleep -Seconds 120
+
+# Run 2
+docker compose -f docker-compose-final.yml up -d
+python tests/collect_metrics.py --duration 300 --interval 5 --output tests/results/final_production_run2.csv --dump-buckets
+docker compose -f docker-compose-final.yml down -v
+Start-Sleep -Seconds 120
+
+# Run 3
+docker compose -f docker-compose-final.yml up -d
+python tests/collect_metrics.py --duration 300 --interval 5 --output tests/results/final_production_run3.csv --dump-buckets
+docker compose -f docker-compose-final.yml down -v
 ```
 
 ---
 
-## 18. Analisis Hasil Pengujian (Otomatis)
+## 7. Uji Ketahanan dan Isolasi Kegagalan (KNF-02 Failover)
 
-Buka terminal di root folder `MDLBEEWS` dan jalankan:
+Uji ini membuktikan persyaratan non-fungsional KNF-02 bahwa kegagalan satu replika pekerja tidak menimbulkan kegagalan berantai (*zero cascading failure*):
 
-```powershell
-# Untuk menganalisis Skenario 1 (Konkurensi)
-python tests/analyze.py --scenario 1
-
-# Untuk memproses dan menampilkan SEMUA skenario sekaligus
-python tests/analyze.py --scenario all
-```
-
----
-
-## 19. Menjalankan Aplikasi Dasbor Desktop Seismik (`seismic_app`)
-
-```powershell
-# 1. Jalankan Infrastruktur Backend (contoh S5 Express)
-docker compose -f docker-compose-s5-express.yml up -d
-
-# 2. Buka terminal baru, masuk ke folder aplikasi
-cd seismic_app
-pip install -r requirements.txt
-
-# 3. Jalankan aplikasi Dasbor Desktop
-python main.py
-```
+1. Jalankan arsitektur NGINX dengan 3 replika:
+   ```powershell
+   docker compose -f docker-compose-s3-nginx.yml up -d
+   ```
+2. Saat aliran data sedang berlangsung (setelah detik ke-60), matikan paksa satu kontainer pekerja P-Wave secara sengaja:
+   ```powershell
+   docker stop gempa-p_wave_detector_load_balance-1
+   ```
+3. Pantau log Load Balancer, Data Archiver, dan WebSocket:
+   ```powershell
+   docker logs --tail 20 gempa-load_balancer-1
+   docker logs --tail 20 gempa-data_archiver-1
+   ```
+4. **Verifikasi Keberhasilan:** 
+   - Load Balancer otomatis mengalihkan *traffic* HTTP ke replika 2 dan 3 yang masih hidup.
+   - Metrik `lb_forward_errors_total` mencatat lonjakan transien singkat lalu kembali normal.
+   - Modul `data_archiver` dan WebSocket tetap memproses dan menyiarkan data tanpa terhenti (*no cascading crash*).
+5. Bersihkan kontainer:
+   ```powershell
+   docker compose -f docker-compose-s3-nginx.yml down -v
+   ```
 
 ---
 
-## 20. Verifikasi dan Pengecekan Environment Variables Container
+## 8. Analisis Data Otomatis & Pemodelan USL (analyze.py)
 
-Untuk memverifikasi bahwa container membaca konfigurasi dari `.env`:
+Setelah seluruh berkas CSV terkumpul di folder `tests/results/`, jalankan analisis otomatis:
 
 ```powershell
-# Cek log startup aplikasi (memastikan "loaded from ENV" tercetak)
-docker compose logs data_provider | Select-String "DATA_PROVIDER_NUM"
-
-# Cek status aktifnya instrumentasi metrik di seluruh container
-docker compose exec data_provider env | Select-String "ENABLE_METRICS"
+cd tests
+# Analisis seluruh skenario sekaligus
+python analyze.py --scenario all
 ```
 
+### Mekanisme Pengolahan Data di `analyze.py`:
+1. **Time-Based Windowing:** Mengabaikan 50 detik pertama sejak data mulai tercatat dan menganalisis 150 detik fase stabil berikutnya.
+2. **True P95 Calculation:** Menghitung persentil 95 sebenarnya dari selisih nilai kumulatif bucket histogram (`--dump-buckets`) antara akhir jendela dan awal jendela.
+3. **Penyaringan Run INVALID:** Run otomatis ditandai `INVALID` dan dikeluarkan dari tabel ringkasan jika:
+   - Jumlah baris sampel kurang dari 90% target waktu.
+   - Kolom metrik bernilai NaN/kosong lebih dari 10%.
+   - Ditemukan kontainer berstatus `OOMKilled` atau restart tak terduga.
+4. **Regresi USL (Universal Scalability Law):**
+   - Menghitung koefisien *contention* ($\sigma$), koefisien *coherency* ($\kappa$), dan kapasitas puncak optimal ($N^*$).
+   - Regresi dihitung menggunakan kapasitas laju deteksi $C(N)$ murni (`sum(rate(pwave_inference_latency_seconds_count[1m]))`), bukan laju paket masuk.
 
+---
+
+## 9. Daftar Luaran Deliverables yang Wajib Dikumpulkan
+
+Setelah pengujian tuntas, pastikan berkas-berkas berikut tersedia di repositori untuk penyusunan BAB IV:
+
+- [ ] **Keluaran Mentah Fase 0:** Catatan teks eksekusi T0.1 s.d. T0.6.
+- [ ] **CSV Mentah Seluruh Run:** Berkas `tests/results/*_metrics.csv` untuk S1–S5 dan Final (minimal 3 run per skenario).
+- [ ] **CSV Dump Buckets:** Berkas `tests/results/*_dump_buckets.csv` untuk verifikasi persentil sejati.
+- [ ] **Metadata Run JSON:** Berkas metadata yang mencatat status `OOMKilled`, `RestartCount`, dan *commit hash* per run.
+- [ ] **Tabel Statistik Ringkasan:** Hasil keluaran `analyze.py` (mean, std dev, min, max, P95 sejati).
+- [ ] **Tabel Parameter USL:** Nilai $\sigma$, $\kappa$, dan $N^*$ untuk Native vs NGINX.
+- [ ] **Keluaran Telegraf & Offset Kafka:** Log metrik host untuk S2 dan lag antrean partisi.
+
+---
+
+## 10. Verifikasi Penyimpanan Database & Troubleshooting
+
+### A. Verifikasi InfluxDB (Penyimpanan Rekaman Seismik)
+```powershell
+# Jalankan kueri data mentah dari bucket gempa
+docker compose exec influxdb influx query 'from(bucket: "gempa") |> range(start: -5m) |> tail(n: 5)' --token "bhIGAk5dlA2gJm1WUG3GmUu_UNtY4G4TVoU2T0vIQBg5o3stlAXsxYoOrKA7ttUhSq8rS3QA1Y-K1wKCTiAGuQ==" --org "owner"
+```
+
+### B. Verifikasi MongoDB (Hasil Deteksi AI)
+```powershell
+docker compose exec mongo mongosh -u admin -p UNDIPJAYA --eval "use timeseries_db; db.timeseries_collection.find().sort({_id: -1}).limit(3)"
+```
+
+### C. Troubleshooting Kendala Umum
+1. **Topik Kafka Belum Siap (*Topic Not Found*):**
+   - Pastikan kontainer `kafka-init` telah selesai berjalan (`Exited (0)`). Layanan ini otomatis membuat partisi deterministik.
+2. **Prometheus Menolak Kueri (*Out of Order*):**
+   - Pastikan jam pada host Windows dan WSL 2 tersinkronisasi: `wsl -d docker-desktop hwclock -s`.
+3. **Pembersihan Bersih Total (*Clean Slate*):**
+   - Jika ingin mengulang pengujian dari awal tanpa residu volume:
+     ```powershell
+     docker stop $(docker ps -aq)
+     docker rm $(docker ps -aq)
+     docker volume prune -f
+     ```
