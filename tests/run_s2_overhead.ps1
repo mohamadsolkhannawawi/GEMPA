@@ -1,55 +1,91 @@
+# run_s2_overhead.ps1 — Skenario S2: Overhead Instrumentasi Prometheus
+# Ketiga kondisi diukur dengan Telegraf (/metrics di :9273) sebagai alat ukur
+# yang seragam. Throughput diukur dari offset Kafka via collect_kafka_offsets.py.
 param (
-    [int]$DurationSec = 300,
+    [int]$DurationSec    = 300,
+    [int]$Repeat         = 3,
+    [switch]$Shuffle,
     [string]$ScenarioName = "All"
 )
 
-$PythonExecutable = "python"
-$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
-$RootDir = Split-Path -Parent $ScriptDir
+. "$PSScriptRoot\_common.ps1"
 
+$PythonExe = "python"
+$RootDir   = Split-Path -Parent $PSScriptRoot
 Set-Location $RootDir
 
-$Scenarios = @(
-    @{ Name="NoMetricsCLI"; File="docker-compose-s2-no_metrics.yml"; OutMetrics="tests/results/s2_overhead_no_metrics_cli_metrics.csv" },
-    @{ Name="NoMetricsAPI"; File="docker-compose-s2-no_metrics.yml"; OutMetrics="tests/results/s2_overhead_no_metrics_api_metrics.csv" },
-    @{ Name="WithMetrics"; File="docker-compose-s2-with_metrics.yml"; OutMetrics="tests/results/s2_overhead_with_metrics_metrics.csv" }
+$BaseScenarios = @(
+    @{ Name="NoMetricsCLI"; File="docker-compose-s2-no_metrics.yml"; OutMetrics="tests/results/s2_overhead_no_metrics_cli_metrics.csv"  },
+    @{ Name="NoMetricsAPI"; File="docker-compose-s2-no_metrics.yml"; OutMetrics="tests/results/s2_overhead_no_metrics_api_metrics.csv"  },
+    @{ Name="WithMetrics";  File="docker-compose-s2-with_metrics.yml"; OutMetrics="tests/results/s2_overhead_with_metrics_metrics.csv" }
 )
 
 if ($ScenarioName -ne "All") {
-    $Scenarios = $Scenarios | Where-Object { $_.Name -eq $ScenarioName }
-    if ($Scenarios.Count -eq 0) {
-        Write-Host "Scenario '$ScenarioName' not found. Available scenarios:" -ForegroundColor Red
-        @("NoMetricsCLI", "NoMetricsAPI", "WithMetrics") | ForEach-Object { Write-Host " - $_" }
-        exit 1
+    $BaseScenarios = $BaseScenarios | Where-Object { $_.Name -eq $ScenarioName }
+    if (-not $BaseScenarios) {
+        Write-Host "Skenario '$ScenarioName' tidak ditemukan." -ForegroundColor Red; exit 1
     }
 }
 
-foreach ($s in $Scenarios) {
-    Write-Host "============================================================" -ForegroundColor Cyan
-    Write-Host "Running Skripsi S2 Scenario: $($s.Name)" -ForegroundColor Cyan
-    Write-Host "============================================================" -ForegroundColor Cyan
-    
-    docker compose -f $($s.File) down -v --remove-orphans
-    docker compose -f $($s.File) up -d --build --remove-orphans
-    
-    Write-Host "Waiting 60s for stabilization..."
-    Start-Sleep -Seconds 60
-    
-    Write-Host "Collecting Metrics..."
-    if ($s.Name -eq "NoMetricsCLI") {
-        # Menggunakan subprocess docker stats
-        $proc2 = Start-Process -FilePath $PythonExecutable -ArgumentList "tests/collect_docker_stats_cli.py --duration $DurationSec --output $($s.OutMetrics)" -PassThru -NoNewWindow
-    } elseif ($s.Name -eq "NoMetricsAPI") {
-        # Menggunakan Docker Python SDK
-        $proc2 = Start-Process -FilePath $PythonExecutable -ArgumentList "tests/collect_docker_stats_api.py --duration $DurationSec --output $($s.OutMetrics)" -PassThru -NoNewWindow
-    } else {
-        # Prometheus is enabled, collect all metrics via PromQL
-        $proc2 = Start-Process -FilePath $PythonExecutable -ArgumentList "tests/collect_metrics.py --scenario s2 --duration $DurationSec --output $($s.OutMetrics)" -PassThru -NoNewWindow
-    }
-    Wait-Process -InputObject $proc2
+if ($Shuffle) { $BaseScenarios = $BaseScenarios | Get-Random -Count $BaseScenarios.Count }
 
-    Write-Host "Tearing down $($s.Name)..."
-    docker compose -f $($s.File) down -v --remove-orphans
+$ArchiveDir = "tests/results_v1_arsip"
+
+foreach ($s in $BaseScenarios) {
+    for ($run = 1; $run -le $Repeat; $run++) {
+
+        $runTag = "$($s.Name)_run${run}"
+        Write-Host "============================================================" -ForegroundColor Cyan
+        Write-Host "S2 | $runTag" -ForegroundColor Cyan
+        Write-Host "============================================================" -ForegroundColor Cyan
+
+        $oldOut = $s.OutMetrics
+        if (Test-Path $oldOut) {
+            if (-not (Test-Path $ArchiveDir)) { New-Item -ItemType Directory -Path $ArchiveDir | Out-Null }
+            $archiveName = $ArchiveDir + "/" + [System.IO.Path]::GetFileNameWithoutExtension($oldOut) + "_archived_$(Get-Date -Format 'yyyyMMdd_HHmmss').csv"
+            Copy-Item $oldOut $archiveName -Force
+        }
+
+        docker compose -f $($s.File) down -v --remove-orphans 2>$null
+        docker compose -f $($s.File) up -d --build --remove-orphans
+
+        Wait-SystemReady -TimeoutSec 300
+
+        Write-Host "Stabilisasi 60s..."
+        Start-Sleep 60
+
+        $outRun  = $s.OutMetrics -replace '\.csv$', "_run${run}.csv"
+        $metaOut = $outRun -replace '\.csv$', '_meta.json'
+        Save-RunMetadata -OutputPath $metaOut -ComposeFile $s.File -ScenarioName $s.Name -RunIndex $run
+
+        Write-Host "Mengumpulkan metrik S2 ($DurationSec s) — kondisi: $($s.Name)..."
+
+        if ($s.Name -eq "NoMetricsCLI") {
+            # Gunakan Telegraf sebagai alat ukur seragam (port 9273)
+            & $PythonExe tests/collect_docker_stats_cli.py --duration $DurationSec --output $outRun
+        } elseif ($s.Name -eq "NoMetricsAPI") {
+            & $PythonExe tests/collect_docker_stats_api.py --duration $DurationSec --output $outRun
+        } else {
+            # WithMetrics: Prometheus tersedia
+            & $PythonExe tests/collect_metrics.py `
+                --scenario s2 `
+                --duration $DurationSec `
+                --output $outRun `
+                --dump-buckets
+        }
+
+        # Throughput dari selisih offset Kafka (tersedia di semua kondisi)
+        $kafkaOut = $outRun -replace '\.csv$', '_kafka_offsets.csv'
+        if (Test-Path "tests/collect_kafka_offsets.py") {
+            & $PythonExe tests/collect_kafka_offsets.py --duration $DurationSec --output $kafkaOut
+        }
+
+        Copy-Results -Files @($outRun, $kafkaOut, $metaOut) -DestDir $ArchiveDir
+
+        docker compose -f $($s.File) down -v --remove-orphans
+
+        if ($run -lt $Repeat) { Start-Cooldown -Seconds 120 }
+    }
 }
 
-Write-Host "Skripsi S2 testing completed!" -ForegroundColor Green
+Write-Host "S2 selesai!" -ForegroundColor Green

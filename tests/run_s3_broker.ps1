@@ -1,45 +1,74 @@
+# run_s3_broker.ps1 — Skenario S3: Kafka Native vs Kafka + NGINX
 param (
-    [int]$DurationSec = 300,
+    [int]$DurationSec    = 300,
+    [int]$Repeat         = 3,
+    [switch]$Shuffle,
     [string]$ScenarioName = "All"
 )
 
-$PythonExecutable = "python"
-$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
-$RootDir = Split-Path -Parent $ScriptDir
+. "$PSScriptRoot\_common.ps1"
 
+$PythonExe = "python"
+$RootDir   = Split-Path -Parent $PSScriptRoot
 Set-Location $RootDir
 
-$Scenarios = @(
-    @{ Name="Kafka"; File="docker-compose-s3-kafka.yml"; OutStats="tests/results/s3_broker_kafka_stats.csv"; OutMetrics="tests/results/s3_broker_kafka_metrics.csv" },
-    @{ Name="NGINX"; File="docker-compose-s3-nginx.yml"; OutStats="tests/results/s3_broker_nginx_stats.csv"; OutMetrics="tests/results/s3_broker_nginx_metrics.csv" }
+$BaseScenarios = @(
+    @{ Name="Kafka"; File="docker-compose-s3-kafka.yml"; OutMetrics="tests/results/s3_broker_kafka_metrics.csv" },
+    @{ Name="NGINX"; File="docker-compose-s3-nginx.yml"; OutMetrics="tests/results/s3_broker_nginx_metrics.csv" }
 )
 
 if ($ScenarioName -ne "All") {
-    $Scenarios = $Scenarios | Where-Object { $_.Name -eq $ScenarioName }
-    if ($Scenarios.Count -eq 0) {
-        Write-Host "Scenario '$ScenarioName' not found. Available scenarios:" -ForegroundColor Red
-        @("Kafka", "NGINX") | ForEach-Object { Write-Host " - $_" }
-        exit 1
+    $BaseScenarios = $BaseScenarios | Where-Object { $_.Name -eq $ScenarioName }
+    if (-not $BaseScenarios) {
+        Write-Host "Skenario '$ScenarioName' tidak ditemukan." -ForegroundColor Red; exit 1
     }
 }
 
-foreach ($s in $Scenarios) {
-    Write-Host "============================================================" -ForegroundColor Cyan
-    Write-Host "Running S3 Load Balancer Scenario: $($s.Name)" -ForegroundColor Cyan
-    Write-Host "============================================================" -ForegroundColor Cyan
-    
-    docker compose -f $($s.File) down -v --remove-orphans
-    docker compose -f $($s.File) up -d --build --remove-orphans
-    
-    Write-Host "Waiting 60s for stabilization..."
-    Start-Sleep -Seconds 60
-    
-    Write-Host "Collecting Docker Stats and Prometheus Metrics..."
-    $proc2 = Start-Process -FilePath $PythonExecutable -ArgumentList "tests/collect_metrics.py --scenario s3 --duration $DurationSec --output $($s.OutMetrics)" -PassThru -NoNewWindow
-    Wait-Process -InputObject $proc2
+if ($Shuffle) { $BaseScenarios = $BaseScenarios | Get-Random -Count $BaseScenarios.Count }
 
-    Write-Host "Tearing down $($s.Name)..."
-docker compose -f $($s.File) down -v --remove-orphans
+$ArchiveDir = "tests/results_v1_arsip"
+
+foreach ($s in $BaseScenarios) {
+    for ($run = 1; $run -le $Repeat; $run++) {
+
+        $runTag = "$($s.Name)_run${run}"
+        Write-Host "============================================================" -ForegroundColor Cyan
+        Write-Host "S3 | $runTag" -ForegroundColor Cyan
+        Write-Host "============================================================" -ForegroundColor Cyan
+
+        $oldOut = $s.OutMetrics
+        if (Test-Path $oldOut) {
+            if (-not (Test-Path $ArchiveDir)) { New-Item -ItemType Directory -Path $ArchiveDir | Out-Null }
+            $archiveName = $ArchiveDir + "/" + [System.IO.Path]::GetFileNameWithoutExtension($oldOut) + "_archived_$(Get-Date -Format 'yyyyMMdd_HHmmss').csv"
+            Copy-Item $oldOut $archiveName -Force
+        }
+
+        docker compose -f $($s.File) down -v --remove-orphans 2>$null
+        docker compose -f $($s.File) up -d --build --remove-orphans
+
+        Wait-SystemReady -TimeoutSec 300
+
+        Write-Host "Stabilisasi 60s..."
+        Start-Sleep 60
+
+        $outRun    = $s.OutMetrics -replace '\.csv$', "_run${run}.csv"
+        $bucketOut = $outRun -replace '\.csv$', '_buckets.csv'
+        $metaOut   = $outRun -replace '\.csv$', '_meta.json'
+        Save-RunMetadata -OutputPath $metaOut -ComposeFile $s.File -ScenarioName $s.Name -RunIndex $run
+
+        Write-Host "Mengumpulkan metrik S3 ($DurationSec s)..."
+        & $PythonExe tests/collect_metrics.py `
+            --scenario s3 `
+            --duration $DurationSec `
+            --output $outRun `
+            --dump-buckets
+
+        Copy-Results -Files @($outRun, $bucketOut, $metaOut) -DestDir $ArchiveDir
+
+        docker compose -f $($s.File) down -v --remove-orphans
+
+        if ($run -lt $Repeat) { Start-Cooldown -Seconds 120 }
+    }
 }
 
-Write-Host "S3 Load Balancer testing completed!" -ForegroundColor Green
+Write-Host "S3 selesai!" -ForegroundColor Green
