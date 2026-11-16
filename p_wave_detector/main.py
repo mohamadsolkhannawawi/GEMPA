@@ -1,14 +1,15 @@
 """
-P-Wave Detector — Kafka Consumer Mode
+P-Wave Detector — Kafka Consumer Mode (Native)
 Consumes seismic traces from p_wave_topic, detects P-wave onset using deep learning,
 and publishes detection results to loc_mag_topic.
 
-Instrumented with Prometheus metrics: Counter, Gauge, Histogram.
+Instrumen Prometheus: Counter, Gauge, Histogram.
+Normalisasi dan logika deteksi diambil dari utils/pwave_common.py agar identik
+dengan mode Load-Balance (p_wave_detector_load_balance/main.py).
 """
 
 import sys
 import os
-import json
 import threading
 from time import sleep, time
 from typing import Dict, Any
@@ -24,16 +25,17 @@ from config.settings import (
     KAFKA_BROKERS,
     KAFKA_BROKERS_PWAVE,
     KAFKA_TOPIC_PWAVE,
-    KAFKA_TOPIC_LOCMAG
+    KAFKA_TOPIC_LOCMAG,
 )
 from utils.kafka_helper import create_topic_if_not_exists, get_consumer, get_producer
 from utils.logger import get_logger
+from utils.pwave_common import normalize_batch, detect, PWAVE_THRESHOLD, PWAVE_CONSEC
 
 logger = get_logger("PWaveDetector")
 
-# =============================================================================
+# ==============================================================================
 # Prometheus Metrics
-# =============================================================================
+# ==============================================================================
 if ENABLE_METRICS:
     from prometheus_client import start_http_server, Counter, Gauge, Histogram
 
@@ -53,27 +55,48 @@ if ENABLE_METRICS:
         'pwave_waveform_cache_size',
         'Number of station-channel entries in waveform cache'
     )
+    PWAVE_INFLIGHT = Gauge(
+        'pwave_inflight',
+        'Number of processing threads currently running'
+    )
+    FINE_BUCKETS = [
+        0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 15.0, 20.0,
+        30.0, 45.0, 60.0, 90.0, 120.0, 180.0, 300.0, 600.0,
+    ]
     PWAVE_INFERENCE_LATENCY = Histogram(
         'pwave_inference_latency_seconds',
         'Latency of P-wave model inference',
-        buckets=[0.01, 0.05, 0.1, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0]
+        buckets=FINE_BUCKETS,
+    )
+    PWAVE_KAFKA_DELAY = Histogram(
+        'pwave_kafka_delay_seconds',
+        'Delay antara data_provider_time dan saat pesan tiba di consumer',
+        buckets=FINE_BUCKETS,
+    )
+    PWAVE_QUEUE_WAIT = Histogram(
+        'pwave_queue_wait_seconds',
+        'Waktu dari pesan tiba di consumer hingga inferensi mulai',
+        buckets=FINE_BUCKETS,
     )
     PWAVE_E2E_LATENCY = Histogram(
         'pwave_end_to_end_latency_seconds',
-        'End-to-end latency from data provider to P-wave detection',
-        buckets=[0.01, 0.05, 0.1, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0]
+        'Latensi E2E: dari data_provider_time hingga sesudah inferensi selesai',
+        buckets=FINE_BUCKETS,
     )
 else:
     PWAVE_REQUESTS = None
     PWAVE_DETECTIONS = None
     PWAVE_ERRORS = None
     PWAVE_CACHE_SIZE = None
+    PWAVE_INFLIGHT = None
     PWAVE_INFERENCE_LATENCY = None
+    PWAVE_KAFKA_DELAY = None
+    PWAVE_QUEUE_WAIT = None
     PWAVE_E2E_LATENCY = None
 
 
 class TraceConsumer:
-    """Kafka consumer that performs P-wave detection on incoming seismic traces."""
+    """Kafka consumer yang mendeteksi P-wave pada setiap trace seismik masuk."""
 
     def __init__(self):
         self.consumer = None
@@ -83,7 +106,7 @@ class TraceConsumer:
         self.cache_lock = threading.Lock()
 
     def setTrace(self, data: Dict[str, Any]) -> obspy.Trace:
-        """Reconstruct an ObsPy Trace from deserialized Kafka message."""
+        """Rekonstruksi obspy.Trace dari pesan Kafka yang di-deserialize."""
         trace = obspy.Trace(np.array(data['data']))
         trace.stats.network = data['network']
         trace.stats.station = data['station']
@@ -101,51 +124,64 @@ class TraceConsumer:
         trace.interpolate(sampling_rate=20)
         return trace
 
-    def preprocessingPWave(self, data: np.ndarray) -> np.ndarray:
-        return data / np.max(np.abs(data), axis=0)
+    def predict(
+        self,
+        trace: obspy.Trace,
+        data_provider_time: float,
+        arrive_time: float,
+    ) -> None:
+        """
+        Jalankan model deteksi P-wave pada trace dan terbitkan hasilnya.
 
-    def predict(self, trace: obspy.Trace, data_provider_time: float) -> None:
-        """Run P-wave detection model on a trace and publish results."""
+        Parameter
+        ---------
+        trace            : obspy.Trace setelah di-resample ke 20 Hz
+        data_provider_time : timestamp saat data dibuat oleh Data Provider
+        arrive_time      : timestamp saat pesan tiba di consumer loop
+                           (digunakan untuk mengukur pwave_queue_wait_seconds)
+        """
         try:
-            converter_np_array = np.array([trace.data, trace.data, trace.data]).T
+            # --- Siapkan input model (vektorisasi, tanpa apply_along_axis) ---
+            converter_np = np.stack([trace.data, trace.data, trace.data], axis=-1)
             sliding_array = np.lib.stride_tricks.sliding_window_view(
-                converter_np_array, (160, 3)).reshape(-1, 160, 3)
-            preprocessed_array = np.apply_along_axis(
-                self.preprocessingPWave, axis=1, arr=sliding_array)
+                converter_np, (160, 3)
+            ).reshape(-1, 160, 3)
 
-            # Inference with latency measurement
+            # Normalisasi batch secara vektorisasi (utils/pwave_common.normalize_batch)
+            preprocessed_array = normalize_batch(sliding_array)
+
+            # --- Ukur latensi antrean (pesan tiba → inferensi mulai) ---
             inference_start = time()
+            if ENABLE_METRICS and PWAVE_QUEUE_WAIT:
+                PWAVE_QUEUE_WAIT.observe(inference_start - arrive_time)
+
+            # --- Inferensi ---
             predictions_p_wave = self.model(preprocessed_array, training=False).numpy()
             inference_duration = time() - inference_start
 
+            # --- Latensi inferensi ---
             if ENABLE_METRICS and PWAVE_INFERENCE_LATENCY:
                 PWAVE_INFERENCE_LATENCY.observe(inference_duration)
 
-            # End-to-end latency - recorded for ALL processed traces regardless of P-wave detection
+            # --- Latensi E2E (dicatat SESUDAH inferensi selesai) ---
             if ENABLE_METRICS and PWAVE_E2E_LATENCY:
                 PWAVE_E2E_LATENCY.observe(time() - data_provider_time)
 
-            # Find best P-wave detection window
-            idx = 0
-            max_value = 0
-            n = 20
-            for i in range(len(predictions_p_wave) - n + 1):
-                if np.all(predictions_p_wave[i:i + n] >= 0.9):
-                    if max_value < np.max(predictions_p_wave[i:i + n]):
-                        max_value = np.max(predictions_p_wave[i:i + n])
-                        idx = i
+            # --- Deteksi menggunakan logika bersama dari pwave_common ---
+            preds_flat = predictions_p_wave[:, 1] if predictions_p_wave.ndim > 1 else predictions_p_wave.flatten()
+            idx, max_value = detect(preds_flat, PWAVE_THRESHOLD, PWAVE_CONSEC)
 
-            if max_value == 0:
+            if max_value == 0.0:
                 return
 
-            # P-wave detected!
+            # --- P-Wave terdeteksi! ---
             if ENABLE_METRICS and PWAVE_DETECTIONS:
                 PWAVE_DETECTIONS.inc()
 
             p_wave_time = trace.stats.starttime.timestamp + idx * trace.stats.delta
-            p_wave_waveform = trace.data.tolist()[idx + 40:idx + 120]
+            p_wave_waveform = trace.data.tolist()[idx + 40: idx + 120]
 
-            data = {
+            result = {
                 'network': trace.stats.network,
                 'station': trace.stats.station,
                 'location': trace.stats.location,
@@ -154,61 +190,93 @@ class TraceConsumer:
                 'p_wave_time': p_wave_time,
                 'data_provider_time': data_provider_time,
                 'p_wave_detector_time': time(),
-                'data': p_wave_waveform
+                'data': p_wave_waveform,
             }
 
-            self.producer.send(KAFKA_TOPIC_LOCMAG, data, key=f"{data['station']}-{data['channel']}")
+            self.producer.send(
+                KAFKA_TOPIC_LOCMAG, result,
+                key=f"{result['station']}-{result['channel']}"
+            )
             self.producer.flush()
 
-            logger.info(f"P-Wave detected for {trace.stats.station}-{trace.stats.channel}")
+            logger.info(
+                f"P-Wave terdeteksi untuk "
+                f"{trace.stats.station}-{trace.stats.channel}"
+            )
 
         except Exception as e:
-            logger.error(f"Error predicting {trace.stats.station} {trace.stats.channel}: {e}")
+            logger.error(
+                f"Kesalahan prediksi "
+                f"{trace.stats.station} {trace.stats.channel}: {e}"
+            )
             if ENABLE_METRICS and PWAVE_ERRORS:
                 PWAVE_ERRORS.inc()
 
-    def process(self, data: Dict[str, Any], data_delay: float) -> None:
-        """Process incoming trace data: concatenate, detect, predict."""
-        start_time = time()
-        key = f"{data['station']}-{data['channel']}"
+    def process(self, data: Dict[str, Any], data_delay: float, arrive_time: float) -> None:
+        """
+        Proses trace masuk: gabungkan cache, periksa panjang, lalu prediksi.
 
-        with self.cache_lock:
-            cached_data = self.last_waveform.get(key)
-        
-        if cached_data:
-            data['data'] = cached_data + data['data']
-            data['start_time'] = data['start_time'] - 4
-            data['npts'] = len(data['data'])
-            data['sample_cnt'] = len(data['data'])
-            data['num_samples'] = len(data['data'])
+        Parameter
+        ---------
+        arrive_time : timestamp saat pesan tiba di consumer loop (untuk PWAVE_QUEUE_WAIT)
+        """
+        if ENABLE_METRICS and PWAVE_INFLIGHT:
+            PWAVE_INFLIGHT.inc()
+        try:
+            start_time = time()
+            key = f"{data['station']}-{data['channel']}"
 
-        sampling_rate = data['sampling_rate']
-        ratio = sampling_rate / 20
-        new_length = int(len(data['data']) / ratio)
-        
-        if new_length >= 160:
-            trace = self.setTrace(data)
-            self.predict(trace, data['data_provider_time'])
-            
             with self.cache_lock:
-                self.last_waveform[key] = []
+                cached_data = self.last_waveform.get(key)
 
-        process_time = time() - start_time
-        logger.debug(f"Delay Kafka: {data_delay:.4f}s | Process Time: {process_time:.4f}s")
+            if cached_data:
+                data['data'] = cached_data + data['data']
+                data['start_time'] = data['start_time'] - 4
+                data['npts'] = len(data['data'])
+                data['sample_cnt'] = len(data['data'])
+                data['num_samples'] = len(data['data'])
+
+            sampling_rate = data['sampling_rate']
+            ratio = sampling_rate / 20
+            new_length = int(len(data['data']) / ratio)
+
+            if new_length >= 160:
+                trace = self.setTrace(data)
+                self.predict(trace, data['data_provider_time'], arrive_time)
+
+                with self.cache_lock:
+                    self.last_waveform[key] = []
+
+            process_time = time() - start_time
+            logger.debug(
+                f"Delay Kafka: {data_delay:.4f}s | Waktu Proses: {process_time:.4f}s"
+            )
+        finally:
+            if ENABLE_METRICS and PWAVE_INFLIGHT:
+                PWAVE_INFLIGHT.dec()
 
     def connectConsumer(self) -> None:
-        """Main consumer loop: receive messages, spawn processing threads."""
-        logger.info(f"Starting consumer loop on topic {KAFKA_TOPIC_PWAVE}...")
+        """Loop utama consumer: terima pesan, spawn thread pemrosesan."""
+        logger.info(f"Memulai consumer loop pada topik {KAFKA_TOPIC_PWAVE}...")
         for msg in self.consumer:
+            arrive_time = time()
             data = msg.value
-            data_delay = time() - data['data_provider_time']
+            data_delay = arrive_time - data['data_provider_time']
+
+            # --- Kafka delay ---
+            if ENABLE_METRICS and PWAVE_KAFKA_DELAY:
+                PWAVE_KAFKA_DELAY.observe(data_delay)
 
             if ENABLE_METRICS and PWAVE_REQUESTS:
                 PWAVE_REQUESTS.inc()
 
-            threading.Thread(target=self.process, args=(data, data_delay)).start()
+            threading.Thread(
+                target=self.process,
+                args=(data, data_delay, arrive_time),
+                daemon=True,
+            ).start()
 
-            # Update waveform cache safely
+            # --- Perbarui cache waveform ---
             key = f"{data['station']}-{data['channel']}"
             with self.cache_lock:
                 if key in self.last_waveform:
@@ -219,10 +287,9 @@ class TraceConsumer:
                 cut_length = int(4 * data['sampling_rate'])
                 if len(self.last_waveform[key]) > cut_length:
                     self.last_waveform[key] = self.last_waveform[key][-cut_length:]
-                    
+
                 cache_size = len(self.last_waveform)
 
-            # Update cache size gauge
             if ENABLE_METRICS and PWAVE_CACHE_SIZE:
                 PWAVE_CACHE_SIZE.set(cache_size)
 
@@ -231,20 +298,24 @@ if __name__ == '__main__':
     if ENABLE_METRICS:
         try:
             start_http_server(METRICS_PORT_PWAVE_DETECTOR)
-            logger.info(f"Prometheus metrics server started on port {METRICS_PORT_PWAVE_DETECTOR}")
+            logger.info(
+                f"Server metrik Prometheus dimulai di port {METRICS_PORT_PWAVE_DETECTOR}"
+            )
         except Exception as e:
-            logger.error(f"Failed to start metrics server: {e}")
+            logger.error(f"Gagal memulai server metrik: {e}")
 
     traceConsumer = TraceConsumer()
-    
+
     create_topic_if_not_exists(
         topic_name=KAFKA_TOPIC_LOCMAG,
         num_partitions=3,
         replication_factor=1,
-        bootstrap_servers=KAFKA_BROKERS
+        bootstrap_servers=KAFKA_BROKERS,
     )
 
-    traceConsumer.consumer = get_consumer(KAFKA_TOPIC_PWAVE, 'trace_group', KAFKA_BROKERS_PWAVE)
+    traceConsumer.consumer = get_consumer(
+        KAFKA_TOPIC_PWAVE, 'trace_group', KAFKA_BROKERS_PWAVE
+    )
     traceConsumer.producer = get_producer(KAFKA_BROKERS)
-    
+
     traceConsumer.connectConsumer()
