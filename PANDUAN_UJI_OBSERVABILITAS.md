@@ -147,11 +147,11 @@ docker compose -f docker-compose-s3-nginx.yml down -v
 ```
 
 ### T0.5: Uji Ketahanan Alokasi Memori Kontainer
-Jalankan 5 replika pekerja P-Wave Native selama 10 menit untuk memastikan tidak terjadi *out-of-memory kill* pada beban penuh.
+Jalankan replika pekerja P-Wave Native selama 10 menit untuk memastikan tidak terjadi *out-of-memory kill* pada beban penuh. Jumlah replika disesuaikan dengan kapasitas RAM mesin — gunakan 3 replika pada mesin dengan RAM ≤ 8 GB, dan 5 replika pada mesin dengan RAM ≥ 16 GB.
 
 ```powershell
-# Jalankan stack dengan 5 replika p_wave_detector
-docker compose -f docker-compose-s4-pwave-kafka-5c.yml up -d
+# Jalankan stack (gunakan 3c untuk mesin RAM ≤ 8GB, 5c untuk RAM ≥ 16GB)
+docker compose -f docker-compose-s4-pwave-kafka-3c.yml up -d
 
 # Tunggu 10 menit
 Start-Sleep 600
@@ -166,7 +166,7 @@ docker ps --filter "name=p_wave_detector" --format "{{.Names}}" | ForEach-Object
 
 Hentikan kontainer setelah verifikasi selesai:
 ```powershell
-docker compose -f docker-compose-s4-pwave-kafka-5c.yml down -v
+docker compose -f docker-compose-s4-pwave-kafka-3c.yml down -v
 ```
 
 ### T0.6: Verifikasi Rebalancing Partisi Kafka Consumer Group
