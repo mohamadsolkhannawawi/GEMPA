@@ -156,8 +156,10 @@ docker compose -f docker-compose-s4-pwave-kafka-5c.yml up -d
 # Tunggu 10 menit
 Start-Sleep 600
 
-# Periksa status OOM dan restart count seluruh replika
-docker inspect --format='{{.Name}}: OOMKilled={{.State.OOMKilled}} Restarts={{.RestartCount}}' $(docker ps -aq --filter "name=p_wave_detector")
+# Periksa status OOM dan restart count seluruh replika (sintaks PowerShell)
+docker ps --filter "name=p_wave_detector" --format "{{.Names}}" | ForEach-Object {
+    docker inspect --format='{{.Name}}: OOMKilled={{.State.OOMKilled}} Restarts={{.RestartCount}}' $_
+}
 ```
 
 **Kriteria kelulusan:** seluruh baris menunjukkan `OOMKilled=false` dan `Restarts=0`.
