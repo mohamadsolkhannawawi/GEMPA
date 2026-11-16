@@ -125,12 +125,21 @@ Jalankan stack NGINX yang memuat Prometheus dan replika P-Wave:
 docker compose -f docker-compose-s3-nginx.yml up -d
 ```
 
-Tunggu sekitar 2 menit hingga data metrik terkumpul, lalu buka Prometheus di `http://localhost:9090` dan eksekusi kueri berikut pada tab **Graph**:
-```
-histogram_quantile(0.95, sum by (le) (rate(pwave_inference_latency_seconds_bucket[1m])))
-```
+Tunggu sekitar 2 menit hingga data metrik terkumpul, lalu buka Prometheus di `http://localhost:9090` dan eksekusi kueri berikut pada tab **Graph**.
 
-**Kriteria kelulusan:** hasil mengembalikan **satu deret nilai tunggal** (bukan deret terpisah per replika). Jika muncul banyak baris dengan label `replica=...`, berarti `sum by (le)` tidak bekerja.
+Gunakan kueri sesuai stack yang sedang berjalan:
+
+- **Stack NGINX** (`docker-compose-s3-nginx.yml`) — metric dari `p_wave_detector_load_balance`:
+  ```
+  histogram_quantile(0.95, sum by (le) (rate(pwave_lb_inference_latency_seconds_bucket[1m])))
+  ```
+
+- **Stack Kafka Native** (`docker-compose-s3-kafka.yml`) — metric dari `p_wave_detector`:
+  ```
+  histogram_quantile(0.95, sum by (le) (rate(pwave_inference_latency_seconds_bucket[1m])))
+  ```
+
+**Kriteria kelulusan:** hasil mengembalikan **satu deret nilai tunggal** (bukan deret terpisah per replika). Jika muncul banyak baris dengan label `instance=...`, berarti `sum by (le)` tidak bekerja.
 
 Hentikan kontainer setelah verifikasi selesai:
 ```powershell
