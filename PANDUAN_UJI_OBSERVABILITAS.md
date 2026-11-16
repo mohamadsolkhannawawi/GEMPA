@@ -118,19 +118,75 @@ docker compose -f docker-compose-s3-nginx.yml down -v
 ```
 
 ### T0.4: Verifikasi Agregasi Histogram PromQL
-Pastikan formula persentil 95 pada Prometheus menggunakan sintaks agregasi lintas replika:
-`histogram_quantile(0.95, sum by (le) (rate(pwave_inference_latency_seconds_bucket[1m])))`
-Hasil evaluasi kueri harus menghasilkan deret nilai tunggal yang utuh.
+Pastikan formula persentil 95 pada Prometheus menggunakan sintaks agregasi lintas replika sehingga hasilnya merepresentasikan keseluruhan replika, bukan hanya satu replika acak.
+
+Jalankan stack NGINX yang memuat Prometheus dan replika P-Wave:
+```powershell
+docker compose -f docker-compose-s3-nginx.yml up -d
+```
+
+Tunggu sekitar 2 menit hingga data metrik terkumpul, lalu buka Prometheus di `http://localhost:9090` dan eksekusi kueri berikut pada tab **Graph**:
+```
+histogram_quantile(0.95, sum by (le) (rate(pwave_inference_latency_seconds_bucket[1m])))
+```
+
+**Kriteria kelulusan:** hasil mengembalikan **satu deret nilai tunggal** (bukan deret terpisah per replika). Jika muncul banyak baris dengan label `replica=...`, berarti `sum by (le)` tidak bekerja.
+
+Hentikan kontainer setelah verifikasi selesai:
+```powershell
+docker compose -f docker-compose-s3-nginx.yml down -v
+```
 
 ### T0.5: Uji Ketahanan Alokasi Memori Kontainer
-Jalankan 5 replika pekerja P-Wave Native selama 10 menit. Periksa metadata status kontainer:
+Jalankan 5 replika pekerja P-Wave Native selama 10 menit untuk memastikan tidak terjadi *out-of-memory kill* pada beban penuh.
+
 ```powershell
+# Jalankan stack dengan 5 replika p_wave_detector
+docker compose -f docker-compose-s4-pwave-kafka-5c.yml up -d
+
+# Tunggu 10 menit
+Start-Sleep 600
+
+# Periksa status OOM dan restart count seluruh replika
 docker inspect --format='{{.Name}}: OOMKilled={{.State.OOMKilled}} Restarts={{.RestartCount}}' $(docker ps -aq --filter "name=p_wave_detector")
 ```
-Kriteria kelulusan: nilai `OOMKilled` bernilai `false` dan `RestartCount` bernilai `0` pada seluruh replika.
+
+**Kriteria kelulusan:** seluruh baris menunjukkan `OOMKilled=false` dan `Restarts=0`.
+
+Hentikan kontainer setelah verifikasi selesai:
+```powershell
+docker compose -f docker-compose-s4-pwave-kafka-5c.yml down -v
+```
 
 ### T0.6: Verifikasi Rebalancing Partisi Kafka Consumer Group
-Amati proses *rebalance* partisi saat replika dinaikkan dari 2 menjadi 3 unit untuk memastikan tidak terjadi kebuntuan (*deadlock*) pada aliran konsumsi.
+Naikkan replika dari 2 menjadi 3 secara live dan amati proses *rebalance* partisi untuk memastikan tidak terjadi kebuntuan (*deadlock*) pada aliran konsumsi.
+
+```powershell
+# Step 1: Jalankan dengan 2 replika
+docker compose -f docker-compose-s4-pwave-kafka-2c.yml up -d
+
+# Tunggu sistem stabil
+Start-Sleep 60
+
+# Step 2: Amati distribusi partisi sebelum scale up
+docker exec kafka1 kafka-consumer-groups --bootstrap-server kafka1:9092 --describe --group p_wave_detector_group
+
+# Step 3: Naikkan ke 3 replika
+docker compose -f docker-compose-s4-pwave-kafka-3c.yml up -d --no-recreate --scale p_wave_detector=3
+
+# Tunggu proses rebalance selesai
+Start-Sleep 30
+
+# Step 4: Amati ulang — semua partisi harus memiliki consumer aktif
+docker exec kafka1 kafka-consumer-groups --bootstrap-server kafka1:9092 --describe --group p_wave_detector_group
+```
+
+**Kriteria kelulusan:** seluruh partisi `p_wave_topic` memiliki kolom `CONSUMER-ID` terisi (tidak ada partisi dengan `CONSUMER-ID` bernilai `-`), dan nilai `LAG` tidak terus membesar seiring waktu.
+
+Hentikan kontainer setelah verifikasi selesai:
+```powershell
+docker compose -f docker-compose-s4-pwave-kafka-3c.yml down -v
+```
 
 ---
 
