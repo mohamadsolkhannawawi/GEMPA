@@ -3,17 +3,29 @@
 # ==============================================================================
 
 global:
-  scrape_interval: 5s          # Scrape targets every 5 seconds
-  evaluation_interval: 5s      # Evaluate rules every 5 seconds
-  scrape_timeout: 4s           # Timeout per scrape
+  scrape_interval: 5s
+  evaluation_interval: 5s
+  scrape_timeout: 4s
+
+# ==============================================================================
+# Bucket histogram yang lebih halus untuk latensi inferensi dan E2E.
+# Bucket lama yang terlalu kasar ([..., 60, 120, 300, 600]) menyebabkan P95
+# tersaturasi sebagai artefak interpolasi (mis. 117.000 ms, 291.000 ms).
+# ==============================================================================
+# Bucket ini dikonfigurasi di level kode (utils/pwave_common.py dan
+# masing-masing main.py), sehingga prometheus.yml tidak perlu mendefinisikan
+# ulang bucket per metrik. Bagian ini hanya sebagai dokumentasi nilai yang
+# dipakai: [0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 15.0, 20.0,
+#            30.0, 45.0, 60.0, 90.0, 120.0, 180.0, 300.0, 600.0]
 
 scrape_configs:
+
   # --- Prometheus self-monitoring ---
   - job_name: 'prometheus'
     static_configs:
       - targets: ['localhost:9090']
 
-  # --- Node Exporter (host-level metrics: CPU, memory, disk, network) ---
+  # --- Node Exporter (host-level: CPU, memory, disk, network) ---
   - job_name: 'node-exporter'
     static_configs:
       - targets: ['node-exporter:9100']
@@ -21,6 +33,7 @@ scrape_configs:
           instance: 'docker-host'
 
   # --- EEWS Microservice Modules ---
+
   - job_name: 'data_provider'
     static_configs:
       - targets: ['data_provider:8101']
@@ -82,6 +95,20 @@ scrape_configs:
     relabel_configs:
       - source_labels: [__address__]
         target_label: instance
+
+  # --- Telegraf (Docker container stats: CPU, RAM per container) ---
   - job_name: 'telegraf-docker'
     static_configs:
       - targets: ['telegraf:9273']
+
+  # --- Kafka Exporter (consumer group lag, topic offsets) ---
+  # Aktif pada semua skenario kecuali kondisi S2 tanpa metrik.
+  # kafka-exporter harus didefinisikan di docker-compose yang bersangkutan
+  # dengan nama service 'kafka-exporter' dan port 9308.
+  - job_name: 'kafka-exporter'
+    static_configs:
+      - targets: ['kafka-exporter:9308']
+        labels:
+          module: 'kafka-exporter'
+    # Gunakan honor_timestamps agar timestamp offset dari Kafka dipakai
+    honor_timestamps: true
