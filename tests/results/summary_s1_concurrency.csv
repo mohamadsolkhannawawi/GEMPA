@@ -1,5 +1,5 @@
-Arsitektur,Throughput (Trace/s),CPU Mean (%),CPU Max (%),RAM Mean (MB)
-SEQUENTIAL,N/A,0.64,0.71,860.8
-MULTITHREAD,251.62,636.73,840.7,7381.27
-MULTIPROCESS,255.75,664.23,933.27,7710.87
-Hibrida,209.71,699.08,958.23,8014.53
+Arsitektur,Throughput trace_topic (Trace/s),Throughput pwave_topic (Trace/s),Received (Trace/s),Dropped Stale (Trace/s),DP CPU Mean (%),DP RAM Mean (MB),PW CPU Mean (%),PW RAM Mean (MB),Status
+SEQUENTIAL,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,INVALID
+MULTITHREAD,N/A,N/A,N/A,N/A,N/A,N/A,636.73,7381.27,VALID
+MULTIPROCESS,N/A,N/A,N/A,N/A,N/A,N/A,663.09,7724.57,VALID
+HIBRIDA,N/A,N/A,N/A,N/A,N/A,N/A,695.16,8011.69,VALID

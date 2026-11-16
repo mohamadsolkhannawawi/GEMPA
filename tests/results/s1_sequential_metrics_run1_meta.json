@@ -1,0 +1,10 @@
+﻿{
+    "env_hash":  "B64E811B28F0",
+    "run_index":  1,
+    "timestamp":  "2026-11-16T21:19:07Z",
+    "compose_file":  "docker-compose-s1-sequential.yml",
+    "compose_hash":  "56C445F8C65D",
+    "git_commit":  "517f085",
+    "kafka_describe":  "",
+    "scenario":  "Sequential"
+}
