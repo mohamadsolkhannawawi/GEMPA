@@ -229,6 +229,40 @@ services:
       - "9273:9273"
     restart: always
 
+  # Inisialisasi topik Kafka secara deterministik (partisi & RF sesuai spesifikasi).
+  # Berjalan sekali lalu keluar (restart: "no").
+  kafka-init:
+    image: confluentinc/cp-kafka:7.7.1
+    depends_on:
+      - kafka1
+      - kafka2
+      - kafka3
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "Waiting for Kafka brokers..."
+        cub kafka-ready -b kafka1:9092 3 60 && \
+        kafka-topics --bootstrap-server kafka1:9092 --create --if-not-exists --topic trace_topic       --partitions 5 --replication-factor 2 && \
+        kafka-topics --bootstrap-server kafka1:9092 --create --if-not-exists --topic p_wave_topic     --partitions 5 --replication-factor 1 && \
+        kafka-topics --bootstrap-server kafka1:9092 --create --if-not-exists --topic loc_mag_topic    --partitions 3 --replication-factor 1 && \
+        kafka-topics --bootstrap-server kafka1:9092 --create --if-not-exists --topic result_loc_mag_topic --partitions 3 --replication-factor 1 && \
+        echo "All topics initialized." || echo "kafka-init failed."
+    restart: "no"
+
+  # Kafka Exporter — mengekspos metrik consumer-group lag ke Prometheus (:9308)
+  kafka-exporter:
+    image: danielqsj/kafka-exporter:latest
+    container_name: kafka-exporter
+    command:
+      - "--kafka.server=kafka1:9092"
+      - "--kafka.server=kafka2:9093"
+      - "--kafka.server=kafka3:9094"
+    ports:
+      - "9308:9308"
+    depends_on:
+      - kafka1
+    restart: always
+
 volumes:
   prometheus_data:
   grafana_data:
