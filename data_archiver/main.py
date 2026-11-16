@@ -57,7 +57,8 @@ if ENABLE_METRICS:
         'archiver_write_latency_seconds',
         'Latency of writing data to storage',
         ['storage'],
-        buckets=[0.01, 0.05, 0.1, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0]
+        buckets=[0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 15.0, 20.0,
+                 30.0, 45.0, 60.0, 90.0, 120.0, 180.0, 300.0, 600.0]
     )
 else:
     ARCHIVER_RECORDS_SAVED = None
@@ -289,7 +290,14 @@ def initialize_system() -> None:
 
 
 def consume_and_save_data() -> None:
-    """Main consumer loop: save incoming trace data to InfluxDB (with threading)."""
+    """Main consumer loop: save incoming trace data to InfluxDB and MongoDB.
+
+    [A3] Penulisan berkas fisik MiniSEED dinonaktifkan.
+    Pengarsipan resmi difokuskan pada InfluxDB (deret waktu) dan MongoDB (metadata).
+    Kapasitas C(N) pada S4A diukur dari:
+      rate(archiver_records_saved_total{storage="influxdb"}[1m])
+    sebagai label tunggal untuk mencegah double counting.
+    """
     consumer = get_consumer(KAFKA_TOPIC_TRACE, 'data_archiver_group', KAFKA_BROKERS)
 
     try:
@@ -299,10 +307,14 @@ def consume_and_save_data() -> None:
 
             start_time = time.time()
             threading.Thread(target=save_data_to_influxdb, args=(data,)).start()
-            
+
             # Jika opsi pengarsipan MongoDB diaktifkan (default: True)
             if os.getenv("ENABLE_MONGO_ARCHIVE", "true").lower() in ("true", "1", "yes"):
                 threading.Thread(target=save_data_to_mongodb, args=(data,)).start()
+
+            # [A3] save_data_to_mseed() TIDAK dipanggil di sini.
+            # MiniSEED bukan penyimpanan resmi; menyertakannya akan menimbulkan
+            # label storage='mseed' yang membiaskan metrik kapasitas.
 
             logger.debug(
                 f"Delay: {time.time() - data['data_provider_time']:.4f}s | "

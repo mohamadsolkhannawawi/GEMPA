@@ -27,7 +27,7 @@ from config.settings import (
     KAFKA_BROKERS,
     KAFKA_TOPIC_LOCMAG,
 )
-from utils.kafka_helper import create_topic_if_not_exists, get_producer
+from utils.kafka_helper import get_producer
 from utils.logger import get_logger
 from utils.pwave_common import normalize_batch, detect, PWAVE_THRESHOLD, PWAVE_CONSEC
 
@@ -106,14 +106,11 @@ app = FastAPI()
 last_waveform: LRUCache = LRUCache(maxsize=6000)
 model = tf.keras.models.load_model('./model_p_wave.h5', compile=False)
 
-# Topik Kafka dan producer dibuat di module-level.
-# Kafka harus sudah ready sebelum container ini naik (diatur di compose via depends_on).
-create_topic_if_not_exists(
-    topic_name=KAFKA_TOPIC_LOCMAG,
-    num_partitions=3,
-    replication_factor=1,
-    bootstrap_servers=KAFKA_BROKERS,
-)
+# Perlindungan garbage collector: referensi task asyncio disimpan di sini (A8).
+background_tasks: set = set()
+
+# Topik Kafka dibuat secara deterministik oleh kafka-init (A9).
+# Tidak ada pemanggilan create_topic_if_not_exists di sini.
 producer = get_producer(KAFKA_BROKERS)
 
 # Hostname replika — dikembalikan dalam respons /trace untuk pelacakan distribusi.
@@ -223,7 +220,7 @@ async def predict(
                 key=f"{result['station']}-{result['channel']}"
             )
         )
-        producer.flush()
+        # Tidak memanggil flush() per pesan — batching alami Kafka (A5).
 
         logger.info(
             f"P-Wave terdeteksi untuk "
@@ -244,19 +241,10 @@ async def process(
     data_delay: float,
     arrive_time: float,
 ) -> None:
-    """Gabungkan cache, periksa panjang, lalu jalankan prediksi."""
+    """Periksa panjang data yang sudah digabungkan cache, lalu jalankan prediksi."""
     if ENABLE_METRICS and PWAVE_LB_INFLIGHT:
         PWAVE_LB_INFLIGHT.inc()
     try:
-        key = f"{data['station']}-{data['channel']}"
-
-        if key in last_waveform:
-            data['data'] = last_waveform[key] + data['data']
-            data['start_time'] -= 4
-            data['npts'] = len(data['data'])
-            data['sample_cnt'] = len(data['data'])
-            data['num_samples'] = len(data['data'])
-
         sampling_rate = data['sampling_rate']
         ratio = sampling_rate / 20
         new_length = int(len(data['data']) / ratio)
@@ -264,7 +252,6 @@ async def process(
         if new_length >= 160:
             trace = set_trace(data)
             await predict(trace, data['data_provider_time'], arrive_time)
-            last_waveform[key] = []
 
         logger.debug(
             f"Delay Kafka: {data_delay:.4f}s"
@@ -291,21 +278,41 @@ async def trace_endpoint(data: dict):
     if ENABLE_METRICS and PWAVE_LB_KAFKA_DELAY:
         PWAVE_LB_KAFKA_DELAY.observe(data_delay)
 
-    asyncio.create_task(process(data, data_delay, arrive_time))
-
-    # Perbarui cache
+    # --- [A2] Bangun salinan mandiri masukan sebelum spawn task ---
+    # 1. Ambil cache lama
+    # 2. Gabungkan dengan paket baru → salinan baru (list(...))
+    # 3. Perbarui cache dengan paket baru saja
+    # 4. Kirim salinan ke asyncio task (tidak berbagi referensi dengan cache)
     key = f"{data['station']}-{data['channel']}"
-    if key in last_waveform:
-        last_waveform[key] += data['data']
+    cached_data = last_waveform.get(key)
+    if cached_data:
+        combined = list(cached_data) + list(data['data'])
     else:
-        last_waveform[key] = data['data']
+        combined = list(data['data'])
 
+    # Perbarui cache dengan paket terbaru saja
+    new_cache = list(data['data'])
     cut_length = int(4 * data['sampling_rate'])
-    if len(last_waveform[key]) > cut_length:
-        last_waveform[key] = last_waveform[key][-cut_length:]
+    if len(new_cache) > cut_length:
+        new_cache = new_cache[-cut_length:]
+    last_waveform[key] = new_cache
+
+    # Buat salinan worker_data yang mandiri
+    worker_data = dict(data)
+    worker_data['data'] = combined
+    if cached_data:
+        worker_data['start_time'] = data['start_time'] - 4
+    worker_data['npts'] = len(combined)
+    worker_data['sample_cnt'] = len(combined)
+    worker_data['num_samples'] = len(combined)
 
     if ENABLE_METRICS and PWAVE_LB_CACHE_SIZE:
         PWAVE_LB_CACHE_SIZE.set(len(last_waveform))
+
+    # --- [A8] Simpan referensi task agar tidak dihapus garbage collector ---
+    task = asyncio.create_task(process(worker_data, data_delay, arrive_time))
+    background_tasks.add(task)
+    task.add_done_callback(background_tasks.discard)
 
     # Kembalikan nama replika agar Load Balancer dapat menghitung distribusi
     return {"replica": REPLICA_HOSTNAME}

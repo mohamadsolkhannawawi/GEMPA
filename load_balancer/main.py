@@ -82,6 +82,9 @@ class TraceConsumer:
 
     def __init__(self):
         self.consumer = None
+        # [A7] Gunakan Session untuk HTTP keep-alive — menghilangkan overhead
+        # TCP handshake berulang pada ribuan paket trace.
+        self._http_session = requests.Session()
 
     def connectConsumer(self) -> None:
         """Loop utama consumer: teruskan tiap pesan via HTTP."""
@@ -105,7 +108,7 @@ class TraceConsumer:
 
             forward_start = time.time()
             try:
-                response = requests.post(LB_TARGET_URL, json=data, timeout=30)
+                response = self._http_session.post(LB_TARGET_URL, json=data, timeout=30)
                 response.raise_for_status()
                 forward_duration = time.time() - forward_start
 

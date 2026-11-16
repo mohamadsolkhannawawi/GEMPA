@@ -8,6 +8,7 @@ yang dipilih lewat DATA_PROVIDER_MODE.
 import sys
 import os
 import shutil
+import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
@@ -21,7 +22,7 @@ from config.settings import (
     SEEDLINK_SERVER,
     STALE_SECONDS,
 )
-from utils.kafka_helper import create_topic_if_not_exists
+from utils.kafka_helper import check_kafka_connection, topic_exists
 from utils.logger import get_logger
 
 logger = get_logger("DataProvider")
@@ -109,19 +110,17 @@ if __name__ == '__main__':
         except Exception as e:
             logger.error(f"Gagal memulai server metrik: {e}")
 
-    # --- Pastikan topik Kafka tersedia ---
-    create_topic_if_not_exists(
-        topic_name=KAFKA_TOPIC_TRACE,
-        num_partitions=5,
-        replication_factor=2,
-        bootstrap_servers=KAFKA_BROKERS,
-    )
-    create_topic_if_not_exists(
-        topic_name=KAFKA_TOPIC_PWAVE,
-        num_partitions=5,
-        replication_factor=1,
-        bootstrap_servers=KAFKA_BROKERS_PWAVE,
-    )
+    # --- Topik Kafka dibuat secara deterministik oleh kafka-init (A9) ---
+    # Tidak ada pemanggilan create_topic_if_not_exists di sini.
+    # Tunggu topik tersedia sebelum memulai streaming.
+    logger.info("Menunggu topik Kafka tersedia dari kafka-init...")
+    for topic in [KAFKA_TOPIC_TRACE, KAFKA_TOPIC_PWAVE]:
+        while True:
+            if check_kafka_connection(KAFKA_BROKERS) and topic_exists(topic, KAFKA_BROKERS):
+                logger.info(f"Topik '{topic}' tersedia.")
+                break
+            logger.debug(f"Menunggu topik '{topic}'...")
+            time.sleep(3)
 
     # --- Baca parameter dari env ---
     raw_num_proc = os.getenv("DATA_PROVIDER_NUM_PROCESSES")

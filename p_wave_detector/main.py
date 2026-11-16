@@ -27,7 +27,7 @@ from config.settings import (
     KAFKA_TOPIC_PWAVE,
     KAFKA_TOPIC_LOCMAG,
 )
-from utils.kafka_helper import create_topic_if_not_exists, get_consumer, get_producer
+from utils.kafka_helper import get_consumer, get_producer
 from utils.logger import get_logger
 from utils.pwave_common import normalize_batch, detect, PWAVE_THRESHOLD, PWAVE_CONSEC
 
@@ -197,7 +197,8 @@ class TraceConsumer:
                 KAFKA_TOPIC_LOCMAG, result,
                 key=f"{result['station']}-{result['channel']}"
             )
-            self.producer.flush()
+            # Tidak memanggil flush() per pesan — biarkan Kafka producer
+            # melakukan batching alami sesuai linger_ms dan acks (A5).
 
             logger.info(
                 f"P-Wave terdeteksi untuk "
@@ -211,49 +212,6 @@ class TraceConsumer:
             )
             if ENABLE_METRICS and PWAVE_ERRORS:
                 PWAVE_ERRORS.inc()
-
-    def process(self, data: Dict[str, Any], data_delay: float, arrive_time: float) -> None:
-        """
-        Proses trace masuk: gabungkan cache, periksa panjang, lalu prediksi.
-
-        Parameter
-        ---------
-        arrive_time : timestamp saat pesan tiba di consumer loop (untuk PWAVE_QUEUE_WAIT)
-        """
-        if ENABLE_METRICS and PWAVE_INFLIGHT:
-            PWAVE_INFLIGHT.inc()
-        try:
-            start_time = time()
-            key = f"{data['station']}-{data['channel']}"
-
-            with self.cache_lock:
-                cached_data = self.last_waveform.get(key)
-
-            if cached_data:
-                data['data'] = cached_data + data['data']
-                data['start_time'] = data['start_time'] - 4
-                data['npts'] = len(data['data'])
-                data['sample_cnt'] = len(data['data'])
-                data['num_samples'] = len(data['data'])
-
-            sampling_rate = data['sampling_rate']
-            ratio = sampling_rate / 20
-            new_length = int(len(data['data']) / ratio)
-
-            if new_length >= 160:
-                trace = self.setTrace(data)
-                self.predict(trace, data['data_provider_time'], arrive_time)
-
-                with self.cache_lock:
-                    self.last_waveform[key] = []
-
-            process_time = time() - start_time
-            logger.debug(
-                f"Delay Kafka: {data_delay:.4f}s | Waktu Proses: {process_time:.4f}s"
-            )
-        finally:
-            if ENABLE_METRICS and PWAVE_INFLIGHT:
-                PWAVE_INFLIGHT.dec()
 
     def connectConsumer(self) -> None:
         """Loop utama consumer: terima pesan, spawn thread pemrosesan."""
@@ -270,28 +228,79 @@ class TraceConsumer:
             if ENABLE_METRICS and PWAVE_REQUESTS:
                 PWAVE_REQUESTS.inc()
 
-            threading.Thread(
-                target=self.process,
-                args=(data, data_delay, arrive_time),
-                daemon=True,
-            ).start()
-
-            # --- Perbarui cache waveform ---
+            # --- [A2] Bangun salinan mandiri masukan di dalam lock SEBELUM spawn thread ---
+            # Urutan di dalam lock:
+            #   1. Ambil salinan cache lama
+            #   2. Gabungkan dengan paket baru
+            #   3. Simpan kembali ke cache (potong bila perlu)
+            #   4. Buat salinan mandiri untuk dikirim ke worker
+            # Ini mencegah aliasing: thread tidak berbagi objek list yang sama
+            # dengan cache, sehingga operasi extend/assign berikutnya tidak
+            # memodifikasi data yang sudah dikirim ke worker.
             key = f"{data['station']}-{data['channel']}"
             with self.cache_lock:
-                if key in self.last_waveform:
-                    self.last_waveform[key].extend(data['data'])
+                cached_data = self.last_waveform.get(key)
+                if cached_data:
+                    combined = list(cached_data) + list(data['data'])
                 else:
-                    self.last_waveform[key] = data['data']
+                    combined = list(data['data'])
 
+                # Perbarui cache dengan paket terbaru saja (bukan combined)
+                new_cache = list(data['data'])
                 cut_length = int(4 * data['sampling_rate'])
-                if len(self.last_waveform[key]) > cut_length:
-                    self.last_waveform[key] = self.last_waveform[key][-cut_length:]
+                if len(new_cache) > cut_length:
+                    new_cache = new_cache[-cut_length:]
+                self.last_waveform[key] = new_cache
+
+                # Buat salinan data yang akan dikirim ke worker (mandiri dari cache)
+                worker_data = dict(data)
+                worker_data['data'] = combined
+                if cached_data:
+                    worker_data['start_time'] = data['start_time'] - 4
+                worker_data['npts'] = len(combined)
+                worker_data['sample_cnt'] = len(combined)
+                worker_data['num_samples'] = len(combined)
 
                 cache_size = len(self.last_waveform)
 
+            threading.Thread(
+                target=self._run_predict_from_combined,
+                args=(worker_data, data_delay, arrive_time),
+                daemon=True,
+            ).start()
+
             if ENABLE_METRICS and PWAVE_CACHE_SIZE:
                 PWAVE_CACHE_SIZE.set(cache_size)
+
+    def _run_predict_from_combined(
+        self,
+        worker_data: Dict[str, Any],
+        data_delay: float,
+        arrive_time: float,
+    ) -> None:
+        """
+        Worker thread: periksa panjang data dan jalankan prediksi.
+
+        Menerima salinan data yang sudah mandiri (tidak berbagi referensi list
+        dengan cache), sehingga aman dijalankan paralel.
+        """
+        if ENABLE_METRICS and PWAVE_INFLIGHT:
+            PWAVE_INFLIGHT.inc()
+        try:
+            sampling_rate = worker_data['sampling_rate']
+            ratio = sampling_rate / 20
+            new_length = int(len(worker_data['data']) / ratio)
+
+            if new_length >= 160:
+                trace = self.setTrace(worker_data)
+                self.predict(trace, worker_data['data_provider_time'], arrive_time)
+
+            logger.debug(
+                f"Delay Kafka: {data_delay:.4f}s"
+            )
+        finally:
+            if ENABLE_METRICS and PWAVE_INFLIGHT:
+                PWAVE_INFLIGHT.dec()
 
 
 if __name__ == '__main__':
@@ -306,12 +315,8 @@ if __name__ == '__main__':
 
     traceConsumer = TraceConsumer()
 
-    create_topic_if_not_exists(
-        topic_name=KAFKA_TOPIC_LOCMAG,
-        num_partitions=3,
-        replication_factor=1,
-        bootstrap_servers=KAFKA_BROKERS,
-    )
+    # Topik Kafka dibuat secara deterministik oleh kafka-init (A9).
+    # Tidak ada pemanggilan create_topic_if_not_exists di sini.
 
     traceConsumer.consumer = get_consumer(
         KAFKA_TOPIC_PWAVE, 'trace_group', KAFKA_BROKERS_PWAVE

@@ -147,6 +147,12 @@ class SeedlinkClient(EasySeedLinkClient):
 
         # --- Filter basi ---
         delay = time.time() - trace.stats.endtime.timestamp
+        # [A6] Catat delay mentah SEBELUM filter agar variabilitas jaringan
+        # GFZ Potsdam dapat diamati secara objektif, termasuk yang > STALE_SECONDS.
+        self._logger.debug(
+            f"[A6] Raw network delay {trace.stats.station}-{trace.stats.channel}: "
+            f"{delay:.3f}s (stale_threshold={STALE_SECONDS}s)"
+        )
         if delay > STALE_SECONDS:
             self._logger.debug(
                 f"Rekaman basi dibuang: {trace.stats.station}-{trace.stats.channel} "
@@ -182,7 +188,7 @@ class SeedlinkClient(EasySeedLinkClient):
             self.producer.send(
                 topic_trace, data, key=f"{data['station']}-{data['channel']}"
             ).add_callback(self.on_send_success).add_errback(self.on_send_error)
-            self.producer.flush()
+            # Tidak memanggil flush() per pesan — batching alami Kafka (A5).
 
             if ENABLE_METRICS and TRACES_SENT:
                 TRACES_SENT.labels(topic=topic_trace).inc()
@@ -192,7 +198,7 @@ class SeedlinkClient(EasySeedLinkClient):
                 self.producer2.send(
                     topic_pwave, data, key=f"{data['station']}-{data['channel']}"
                 ).add_callback(self.on_send_success).add_errback(self.on_send_error)
-                self.producer2.flush()
+                # Tidak memanggil flush() per pesan — batching alami Kafka (A5).
 
                 if ENABLE_METRICS and TRACES_SENT:
                     TRACES_SENT.labels(topic=topic_pwave).inc()
