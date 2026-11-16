@@ -129,7 +129,15 @@ Results are saved as `.csv` files in `tests/results/`.
 - **Missing AI Models:** Ensure `model_p_wave.h5` and `model_loc_mag.h5` are present in their respective detector folders before building.
 - **Permission Denied when saving CSV:** Ensure no test `.csv` files are currently opened in Excel while the test scripts are running.
 
-## 8. License & Author
+## 8. Acknowledgements
+
+This project is built upon the open-source framework [MDLBEEWS (Modular Deep Learning Based Earthquake Early Warning System)](https://github.com/ArjunaWahyu/MDLBEEWS) developed by Arjuna Wahyu Kusuma, Adi Wibowo, Satriawan Rasyid Purnama, and Roy Marcelino Liem. The deep learning models are used as pre-trained inference components derived directly from their upstream repository:
+- **P-Wave Detection Model:** [`p_wave_detector/model_p_wave.h5`](https://github.com/ArjunaWahyu/MDLBEEWS/blob/main/p_wave_detector/model_p_wave.h5) (Commit [`d805881`](https://github.com/ArjunaWahyu/MDLBEEWS/commit/d805881))
+- **Location & Magnitude Estimation Model:** [`loc_mag_detector/model_loc_mag.h5`](https://github.com/ArjunaWahyu/MDLBEEWS/blob/main/loc_mag_detector/model_loc_mag.h5) (Commit [`84154e0`](https://github.com/ArjunaWahyu/MDLBEEWS/commit/84154e0))
+
+This thesis focuses on extending the original framework by integrating a **First-Class Observability Layer** using Prometheus and Grafana, and conducting comprehensive performance evaluations (S1-S5).
+
+## 9. License & Author
 - **Author:** Mohamad Solkhan Nawawi
 - **License:** MIT License
 
@@ -259,6 +267,14 @@ Hasil akan disimpan sebagai file `.csv` di dalam folder `tests/results/`.
 - **Model AI Tidak Ditemukan:** Pastikan file `model_p_wave.h5` dan `model_loc_mag.h5` sudah ada di dalam folder masing-masing sebelum menjalankan perintah *build*.
 - **Permission Denied saat membuat CSV:** Pastikan tidak ada file hasil uji (CSV) yang sedang dibuka di Excel atau aplikasi lain saat skrip PowerShell sedang berjalan.
 
-## 8. Lisensi & Penulis
+## 8. Penghargaan (Acknowledgements)
+
+Proyek ini dibangun di atas kerangka kerja *open-source* [MDLBEEWS (Modular Deep Learning Based Earthquake Early Warning System)](https://github.com/ArjunaWahyu/MDLBEEWS) yang dikembangkan oleh Arjuna Wahyu Kusuma, Adi Wibowo, Satriawan Rasyid Purnama, dan Roy Marcelino Liem. Model *deep learning* yang digunakan merupakan komponen inferensi pra-latih (*pre-trained*) yang bersumber langsung dari repositori *upstream* tersebut:
+- **Model Deteksi Gelombang-P:** [`p_wave_detector/model_p_wave.h5`](https://github.com/ArjunaWahyu/MDLBEEWS/blob/main/p_wave_detector/model_p_wave.h5) (Commit [`d805881`](https://github.com/ArjunaWahyu/MDLBEEWS/commit/d805881))
+- **Model Estimasi Lokasi & Magnitudo:** [`loc_mag_detector/model_loc_mag.h5`](https://github.com/ArjunaWahyu/MDLBEEWS/blob/main/loc_mag_detector/model_loc_mag.h5) (Commit [`84154e0`](https://github.com/ArjunaWahyu/MDLBEEWS/commit/84154e0))
+
+Fokus dari skripsi ini adalah mengembangkan kerangka kerja asli tersebut dengan mengintegrasikan **Lapisan Observabilitas Kelas Satu** menggunakan Prometheus dan Grafana, serta melakukan evaluasi kinerja yang komprehensif (Skenario Uji S1-S5).
+
+## 9. Lisensi & Penulis
 - **Penulis:** Mohamad Solkhan Nawawi
 - **Lisensi:** MIT License

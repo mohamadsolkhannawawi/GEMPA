@@ -140,7 +140,7 @@ Container berikut **wajib** berstatus `Up (healthy)` atau `Up`:
 | `prometheus`                   | Up           |
 | `grafana`                      | Up           |
 
-### Langkah 4.3 — Periksa Prometheus
+### Langkah 4.3 — Periksa Prometheus dan Status Target Scrape
 
 ```powershell
 # Prometheus harus menjawab "Prometheus Server is Ready."
@@ -152,7 +152,51 @@ curl.exe "http://localhost:9090/api/v1/query?query=up" |
     ConvertTo-Json -Depth 100
 ```
 
-Buka `http://localhost:9090/targets` di browser. Semua service EEWS harus berstatus **UP** (hijau).
+Buka `http://localhost:9090/targets` di browser. Berikut adalah status ketersediaan target scrape Prometheus pada sistem:
+
+#### Status Scrape Targets Prometheus (`http://localhost:9090/targets`)
+
+| Job Name | State | Up / Total | Endpoint Target | Last Scrape | Scrape Duration | Error / Status Catatan |
+| --- | --- | --- | --- | --- | --- | --- |
+| `api_server` | **DOWN** | 0/1 | `http://api_server:8107/metrics` | ~2.5s ago | 2.481s | `dial tcp: lookup api_server... no such host` (Aktifkan `api_server` jika pengujian memerlukan Express API) |
+| `data_archiver` | **UP** | 3/3 | `http://172.18.0.16:8106/metrics`<br>`http://172.18.0.20:8106/metrics`<br>`http://172.18.0.23:8106/metrics` | ~1.8s ago | 2.6ms – 36.5ms | Target terdeteksi via DNS SD multi-container |
+| `data_provider` | **UP** | 1/1 | `http://data_provider:8101/metrics` | ~934ms ago | 2.866ms | Normal |
+| `fast_api` | **UP** | 1/1 | `http://fast_api:3333/metrics` | ~3.19s ago | 3.428ms | Normal |
+| `load_balancer` | **UP** | 1/1 | `http://load_balancer:8103/metrics` | ~4.43s ago | 3.667ms | Normal |
+| `loc_mag_detector` | **UP** | 1/1 | `http://172.18.0.14:8105/metrics` | ~2.75s ago | 2.124ms | Normal |
+| `node-exporter` | **UP** | 1/1 | `http://node-exporter:9100/metrics` | ~4.3s ago | 12.247ms | Host metrics (docker-host) |
+| `p_wave_detector_load_balance` | **UP** | 5/5 | `http://172.18.0.15:8004/metrics`<br>`http://172.18.0.24:8004/metrics`<br>`http://172.18.0.22:8004/metrics`<br>`http://172.18.0.25:8004/metrics`<br>`http://172.18.0.21:8004/metrics` | ~1.3s - 4.5s ago | 25.1ms – 98.7ms | Multi-instance load balanced |
+| `prometheus` | **UP** | 1/1 | `http://localhost:9090/metrics` | ~3.57s ago | 3.868ms | Self-monitoring |
+| `telegraf-docker` | **UP** | 1/1 | `http://telegraf:9273/metrics` | ~292ms ago | 26.487ms | Container metrics exporter |
+
+---
+
+### Daftar Perhitungan Query PromQL Keseluruhan (Prometheus Scraping & Expressions)
+
+Anda dapat melakukan eksekusi query perhitungan ini secara mandiri melalui URL Graf/Query Prometheus:
+[http://localhost:9090/graph?g0.expr=&g0.tab=1&g0.display_mode=lines&g0.show_exemplars=0&g0.range_input=1h](http://localhost:9090/graph?g0.expr=&g0.tab=1&g0.display_mode=lines&g0.show_exemplars=0&g0.range_input=1h)
+
+| No | Key Metrik | Deskripsi & Penggunaan Skenario | Formula / Perhitungan PromQL |
+|---|---|---|---|
+| 1 | `dp_throughput_traces_per_sec` | Throughput sinyal sinyal seismik (traces/detik) yang dikirim oleh Data Provider (S1–S5) | `sum(rate(data_provider_traces_sent_total[1m]))` |
+| 2 | `pwave_inference_latency_p95` | Latensi inferensi P-Wave Detector persentil 95 (Kafka Direct) (S2, S3, S4) | `histogram_quantile(0.95, rate(pwave_inference_latency_seconds_bucket[1m]))` |
+| 3 | `pwave_lb_inference_latency_p95` | Latensi inferensi P-Wave Detector persentil 95 (via Load Balancer NGINX) (S3, S4) | `histogram_quantile(0.95, rate(pwave_lb_inference_latency_seconds_bucket[1m]))` |
+| 4 | `lb_forward_latency_p95` | Latensi forwarding HTTP NGINX Load Balancer persentil 95 (S3) | `histogram_quantile(0.95, rate(lb_forward_latency_seconds_bucket[1m]))` |
+| 5 | `locmag_inference_latency_p95` | Latensi inferensi Location & Magnitude Detector persentil 95 (S2) | `histogram_quantile(0.95, rate(locmag_inference_latency_seconds_bucket[1m]))` |
+| 6 | `e2e_delay_pwave_p95` | Latensi total End-to-End P-Wave Detector persentil 95 (S2, S3) | `histogram_quantile(0.95, rate(pwave_end_to_end_latency_seconds_bucket[1m]))` |
+| 7 | `e2e_delay_locmag_p95` | Latensi total End-to-End Location/Magnitude Detector persentil 95 (S2) | `histogram_quantile(0.95, rate(locmag_end_to_end_latency_seconds_bucket[1m]))` |
+| 8 | `ws_broadcast_latency_p95` | Latensi broadcast pengiriman pesan WebSocket Express.js persentil 95 (S5) | `histogram_quantile(0.95, rate(ws_broadcast_latency_seconds_bucket[1m]))` |
+| 9 | `fastapi_ws_broadcast_latency_p95` | Latensi broadcast pengiriman pesan WebSocket FastAPI persentil 95 (S5) | `histogram_quantile(0.95, rate(fastapi_ws_broadcast_latency_seconds_bucket[1m]))` |
+| 10 | `active_ws_clients_express` | Jumlah klien WebSocket aktif di server Express.js (S5) | `ws_active_clients` |
+| 11 | `active_ws_clients_fastapi` | Jumlah klien WebSocket aktif di server FastAPI (S5) | `fastapi_ws_active_clients` |
+| 12 | `pwave_aggregate_cpu_percent` | Akumulasi konsumsi CPU (%) seluruh kontainer P-Wave Detector (Telegraf) (S1–S5) | `sum(docker_container_cpu_usage_percent{container_name=~".*p_wave_detector.*"})` |
+| 13 | `pwave_aggregate_mem_mb` | Akumulasi penggunaan RAM (MB) seluruh kontainer P-Wave Detector (Telegraf) (S1–S5) | `sum(docker_container_mem_usage{container_name=~".*p_wave_detector.*"}) / 1048576` |
+| 14 | `archiver_aggregate_cpu_percent` | Akumulasi konsumsi CPU (%) seluruh kontainer Data Archiver (Telegraf) (S4) | `sum(docker_container_cpu_usage_percent{container_name=~".*data_archiver.*"})` |
+| 15 | `archiver_aggregate_mem_mb` | Akumulasi penggunaan RAM (MB) seluruh kontainer Data Archiver (Telegraf) (S4) | `sum(docker_container_mem_usage{container_name=~".*data_archiver.*"}) / 1048576` |
+| 16 | `host_cpu_usage_percent` | Persentase total konsumsi CPU Host Node Exporter | `100 - (avg(rate(node_cpu_seconds_total{mode="idle"}[1m])) * 100)` |
+| 17 | `prometheus_target_up` | Status aktif/tidaknya target scrape (1 = UP, 0 = DOWN) | `up` |
+
+---
 
 ### Langkah 4.4 — Periksa Grafana
 

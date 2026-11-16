@@ -20,3 +20,10 @@ DOKUMEN SKRIPSI
 
 # KECUALIKAN file .env.example agar tetap masuk ke Git
 !influxDB/.env.example
+
+# Untracked Dokumen & Scratch Scripts
+DOKUMEN/
+DOKUMEN_CODEBASE_LLM/
+Prompt Perbaikan Kode dan Pengujian Ulang Sistem GEMPA.md
+export_csv_to_md.py
+export_to_md.py
