@@ -1,4 +1,4 @@
-# run_s1_dataprovider.ps1 — Skenario S1: Strategi Concurrency Data Provider
+﻿# run_s1_dataprovider.ps1 — Skenario S1: Strategi Concurrency Data Provider
 # Protokol: gerbang kesiapan aktif, 60s stabilisasi, 300s pengukuran,
 #            3 pengulangan per konfigurasi, urutan diacak, jeda 120s antar run.
 param (
@@ -22,6 +22,7 @@ $BaseScenarios = @(
 )
 
 if ($ScenarioName -ne "All") {
+    if ($ScenarioName -eq "Hibrida" -or $ScenarioName -eq "Hybrid") { $ScenarioName = "MP_MT" }
     $BaseScenarios = $BaseScenarios | Where-Object { $_.Name -eq $ScenarioName }
     if (-not $BaseScenarios) {
         Write-Host "Skenario '$ScenarioName' tidak ditemukan." -ForegroundColor Red; exit 1

@@ -278,7 +278,7 @@ def analyze_s1() -> None:
         ("SEQUENTIAL",  "s1_sequential"),
         ("MULTITHREAD",  "s1_multithread"),
         ("MULTIPROCESS", "s1_multiprocess"),
-        ("MP_MT",        "s1_mp_mt"),
+        ("HIBRIDA (MP_MT)", "s1_mp_mt"),
     ]
     headers = [
         "Arsitektur",
