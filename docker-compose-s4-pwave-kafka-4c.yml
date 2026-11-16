@@ -1,4 +1,4 @@
-# ==============================================================================
+﻿# ==============================================================================
 # SKENARIO    : S4 — Uji Skalabilitas (Stress Testing) (P-Wave Detector)
 # KONFIGURASI : Kafka Native - 4 Container P-Wave Detector
 # PERINTAH    : docker compose -f docker-compose-s3-pwave-kafka-4c.yml up -d --build
@@ -157,6 +157,9 @@ services:
       dockerfile: p_wave_detector/Dockerfile
     deploy:
       replicas: 4
+      resources:
+        limits:
+          memory: 4g
     tty: true
     env_file:
       - .env
