@@ -109,7 +109,7 @@ services:
     env_file:
       - .env
     environment:
-      DATA_PROVIDER_MODE: "multiprocess"
+      DATA_PROVIDER_MODE: "multithread"
       ENABLE_METRICS: "false"
     healthcheck:
       test: ["CMD", "true"]

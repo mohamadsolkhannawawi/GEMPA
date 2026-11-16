@@ -130,7 +130,7 @@ services:
     env_file:
       - .env
     environment:
-      DATA_PROVIDER_MODE: "multiprocess"
+      DATA_PROVIDER_MODE: "multithread"
       ENABLE_METRICS: "true"
     depends_on:
       - kafka1

@@ -157,7 +157,7 @@ services:
     env_file:
       - .env
     environment:
-      DATA_PROVIDER_MODE: "multiprocess"
+      DATA_PROVIDER_MODE: "multithread"
     depends_on:
       - kafka1
     restart: always

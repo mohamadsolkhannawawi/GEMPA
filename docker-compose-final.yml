@@ -191,7 +191,7 @@ services:
     env_file:
       - .env
     environment:
-      DATA_PROVIDER_MODE: "multiprocess"
+      DATA_PROVIDER_MODE: "multithread"
       LB_TARGET_URL: "http://nginx_load_balancer:80/trace"
     depends_on:
       - kafka1
