@@ -2,9 +2,9 @@
     "env_hash":  "B64E811B28F0",
     "run_index":  2,
     "timestamp":  "2026-11-16T22:26:29Z",
-    "compose_file":  "docker-compose-s1-mp_mt.yml",
+    "compose_file":  "docker-compose-s1-hibrida.yml",
     "compose_hash":  "403DEAD4D8D1",
     "git_commit":  "517f085",
     "kafka_describe":  "",
-    "scenario":  "MP_MT"
+    "scenario":  "Hibrida"
 }
