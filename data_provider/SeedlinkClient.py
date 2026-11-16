@@ -1,45 +1,77 @@
+"""
+SeedlinkClient.py — Klien SeedLink yang mempublikasikan trace ke Kafka.
+
+Digunakan oleh semua mode Data Provider (sequential, multithread, multiprocess,
+multiprocess+thread). Metrik Prometheus dibagikan ke proses induk via mode
+multiprocess prometheus_client.
+"""
+
 import os
-from obspy.clients.seedlink.easyseedlink import EasySeedLinkClient
-from kafka import KafkaProducer
-import json
 import time
 import concurrent.futures
 import threading
 
-# --- Prometheus Metrics (shared with main.py via multiprocess mode) ---
-ENABLE_METRICS = os.getenv("ENABLE_METRICS", "true").lower() == "true"
+from obspy.clients.seedlink.easyseedlink import EasySeedLinkClient
+from kafka import KafkaProducer
+import json
 
+# ==============================================================================
+# Parameter dari env
+# ==============================================================================
+ENABLE_METRICS = os.getenv("ENABLE_METRICS", "true").lower() in ("1", "true", "yes", "on")
+
+# Rekaman dianggap basi dan dibuang bila delay melebihi nilai ini (detik).
+STALE_SECONDS: float = float(os.getenv("STALE_SECONDS", "60"))
+
+# ==============================================================================
+# Prometheus Metrics (dibagikan lewat multiprocess mode)
+# ==============================================================================
 if ENABLE_METRICS:
     from prometheus_client import Counter, Gauge, REGISTRY
 
-    def get_metric(metric_class, name, desc, labelnames=(), **kwargs):
-        # prometheus_client internally appends _total for Counters, so we check various forms
-        for s_name in [name, f"{name}_total", f"{name}_created"]:
-            if s_name in REGISTRY._names_to_collectors:
-                return REGISTRY._names_to_collectors[s_name]
-        
+    def _get_or_create(metric_class, name, desc, labelnames=(), **kwargs):
+        """
+        Ambil metrik yang sudah ada dari REGISTRY atau buat baru.
+        Menghindari duplikasi saat modul di-import di proses yang berbeda-beda.
+        """
+        for candidate in [name, f"{name}_total", f"{name}_created"]:
+            if candidate in REGISTRY._names_to_collectors:
+                return REGISTRY._names_to_collectors[candidate]
         if labelnames:
             return metric_class(name, desc, labelnames, **kwargs)
         return metric_class(name, desc, **kwargs)
 
-    TRACES_SENT = get_metric(
+    TRACES_RECEIVED = _get_or_create(
+        Counter,
+        'data_provider_traces_received',
+        'Total rekaman yang diterima dari SeedLink (sebelum filter basi)',
+        ['type'],
+    )
+    TRACES_DROPPED_STALE = _get_or_create(
+        Counter,
+        'data_provider_traces_dropped_stale',
+        'Total rekaman yang dibuang karena dianggap basi (delay > STALE_SECONDS)',
+    )
+    TRACES_SENT = _get_or_create(
         Counter,
         'data_provider_traces_sent',
-        'Total number of trace messages sent to Kafka',
-        ['topic']
+        'Total rekaman yang berhasil dikirim ke Kafka',
+        ['topic'],
     )
-    PUBLISH_ERRORS = get_metric(
+    PUBLISH_ERRORS = _get_or_create(
         Counter,
         'data_provider_publish_errors',
-        'Total number of Kafka publish errors'
+        'Total kesalahan publikasi ke Kafka',
     )
-    ACTIVE_STREAMS = get_metric(
+    ACTIVE_STREAMS = _get_or_create(
         Gauge,
         'data_provider_active_streams',
-        'Number of active SeedLink streams',
-        multiprocess_mode='livesum'
+        'Jumlah stream SeedLink yang sedang aktif',
+        multiprocess_mode='livesum',
     )
 else:
+    TRACES_RECEIVED = None
+    TRACES_DROPPED_STALE = None
     TRACES_SENT = None
     PUBLISH_ERRORS = None
     ACTIVE_STREAMS = None
@@ -47,14 +79,18 @@ else:
 
 class SeedlinkClient(EasySeedLinkClient):
     """
-    Custom SeedLink client that ingests seismic data and publishes to Kafka.
-    Instrumented with Prometheus Counter and Gauge metrics.
+    Klien SeedLink kustom yang mengonsumsi data seismik dan mempublikasikan ke Kafka.
+    Dilengkapi Counter dan Gauge Prometheus.
     """
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        bootstrap_servers = os.getenv("KAFKA_BROKERS", "kafka1:9092,kafka2:9093").split(",")
-        bootstrap_servers_pwave = os.getenv("KAFKA_BROKERS_PWAVE", "kafka3:9094").split(",")
+        bootstrap_servers = os.getenv(
+            "KAFKA_BROKERS", "kafka1:9092,kafka2:9093"
+        ).split(",")
+        bootstrap_servers_pwave = os.getenv(
+            "KAFKA_BROKERS_PWAVE", "kafka3:9094"
+        ).split(",")
 
         self.producer = KafkaProducer(
             bootstrap_servers=bootstrap_servers,
@@ -66,42 +102,58 @@ class SeedlinkClient(EasySeedLinkClient):
             value_serializer=lambda v: json.dumps(v).encode('utf-8'),
             key_serializer=lambda v: json.dumps(v).encode('utf-8'),
         )
-
         self.data_station_channel = {}
+        self._logger = _get_logger()
 
     def down_sampling(self, trace):
-        """Down-sample trace to 20 Hz if sampling rate is higher."""
+        """Turunkan sampling rate ke 20 Hz jika lebih tinggi."""
         if trace.stats.sampling_rate > 20:
-            before_sampling_rate = trace.stats.sampling_rate
+            before = trace.stats.sampling_rate
             trace.interpolate(sampling_rate=20)
-            after_sampling_rate = trace.stats.sampling_rate
-            print(f"Down sampling {trace.stats.station}\t{trace.stats.channel} : {before_sampling_rate} -> {after_sampling_rate}")
+            self._logger.debug(
+                f"Down-sampling {trace.stats.station}\t{trace.stats.channel}: "
+                f"{before} → {trace.stats.sampling_rate}"
+            )
         return trace
-
-    def log_data(self, data, type="LOG", stat="-"):
-        print(f"[+] <{stat}> <{type}>  {data}")
 
     def on_send_success(self, record_metadata):
         pass
 
     def on_send_error(self, excp):
-        print(f"I am an errback {excp}")
+        self._logger.error(f"Kesalahan kirim Kafka: {excp}")
         if ENABLE_METRICS and PUBLISH_ERRORS:
             PUBLISH_ERRORS.inc()
 
     def calculate_gap_time(self, trace):
+        """Hitung dan log gap antar trace pada kanal yang sama."""
         key = f"{trace.stats.station}-{trace.stats.channel}"
         if key in self.data_station_channel:
             gap = trace.stats.starttime - self.data_station_channel[key].stats.endtime
             if gap > trace.stats.delta * 2:
-                print(f"[{trace.stats.station}-{trace.stats.channel}]\tDelta: {trace.stats.delta}\tGap : {gap}\tDelay : {time.time() - trace.stats.endtime.timestamp}")
-            self.data_station_channel[key] = trace
-        else:
-            self.data_station_channel[key] = trace
+                self._logger.debug(
+                    f"[{key}] Delta: {trace.stats.delta:.4f}s | "
+                    f"Gap: {gap:.4f}s | "
+                    f"Delay: {time.time() - trace.stats.endtime.timestamp:.4f}s"
+                )
+        self.data_station_channel[key] = trace
 
     def send_to_kafka(self, trace):
-        """Serialize trace data and publish to Kafka topics."""
-        if time.time() - trace.stats.endtime.timestamp > 60:
+        """Serialisasi trace dan publikasikan ke topik Kafka."""
+        channel_type = trace.stats.channel[-1] if trace.stats.channel else "?"
+
+        # --- Hitung counter received SEBELUM filter basi ---
+        if ENABLE_METRICS and TRACES_RECEIVED:
+            TRACES_RECEIVED.labels(type=channel_type).inc()
+
+        # --- Filter basi ---
+        delay = time.time() - trace.stats.endtime.timestamp
+        if delay > STALE_SECONDS:
+            self._logger.debug(
+                f"Rekaman basi dibuang: {trace.stats.station}-{trace.stats.channel} "
+                f"delay={delay:.1f}s > {STALE_SECONDS}s"
+            )
+            if ENABLE_METRICS and TRACES_DROPPED_STALE:
+                TRACES_DROPPED_STALE.inc()
             return
 
         data = {
@@ -120,7 +172,7 @@ class SeedlinkClient(EasySeedLinkClient):
             'sample_cnt': trace.stats.samplecnt,
             'sample_type': trace.stats.sampletype,
             'data_provider_time': time.time(),
-            'data': trace.data.tolist()
+            'data': trace.data.tolist(),
         }
 
         topic_trace = os.getenv("KAFKA_TOPIC_TRACE", "trace_topic")
@@ -135,6 +187,7 @@ class SeedlinkClient(EasySeedLinkClient):
             if ENABLE_METRICS and TRACES_SENT:
                 TRACES_SENT.labels(topic=topic_trace).inc()
 
+            # Hanya kanal Z yang dikirim ke p_wave_topic
             if trace.stats.channel.endswith('Z'):
                 self.producer2.send(
                     topic_pwave, data, key=f"{data['station']}-{data['channel']}"
@@ -145,31 +198,54 @@ class SeedlinkClient(EasySeedLinkClient):
                     TRACES_SENT.labels(topic=topic_pwave).inc()
 
         except Exception as e:
-            print(f"Error sending to Kafka: {e}")
+            self._logger.error(f"Kesalahan kirim ke Kafka: {e}")
             if ENABLE_METRICS and PUBLISH_ERRORS:
                 PUBLISH_ERRORS.inc()
+            return
 
-        print(f"Delay {data['station']}\t{data['channel']} : {time.time() - trace.stats.endtime.timestamp}")
-        data = None
+        self._logger.debug(
+            f"Delay {data['station']}\t{data['channel']}: "
+            f"{time.time() - trace.stats.endtime.timestamp:.4f}s"
+        )
 
     def on_data(self, trace):
         self.send_to_kafka(trace)
 
     def on_seedlink_error(self):
-        print('Seedlink error')
+        self._logger.error('Kesalahan SeedLink')
 
     def on_terminate(self):
-        print('Terminating')
+        self._logger.info('Koneksi SeedLink diakhiri')
+
+
+def _get_logger():
+    """Ambil logger dengan nama SeedlinkClient."""
+    import logging
+    logger = logging.getLogger("SeedlinkClient")
+    if not logger.handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(
+            logging.Formatter('%(asctime)s | %(levelname)-8s | %(name)s | %(message)s')
+        )
+        logger.addHandler(handler)
+        logger.setLevel(logging.INFO)
+    return logger
 
 
 def run_client(server, station_configs, process_id):
-    """Run a SeedLink client process for a subset of station configurations."""
+    """Jalankan satu instance SeedlinkClient untuk subset konfigurasi stasiun."""
+    logger = _get_logger()
     client = SeedlinkClient(server)
 
     if ENABLE_METRICS and ACTIVE_STREAMS:
         ACTIVE_STREAMS.inc(len(station_configs))
 
     for config in station_configs:
-        client.select_stream(config['network'], config['station'], config['seedname'])
-    print('Run client', process_id, 'with', len(station_configs), 'station configs finished')
+        client.select_stream(
+            config['network'], config['station'], config['seedname']
+        )
+
+    logger.info(
+        f"Klien {process_id} dimulai dengan {len(station_configs)} konfigurasi stasiun"
+    )
     client.run()
