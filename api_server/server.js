@@ -110,7 +110,8 @@ const initializeWebSocket = (consumer) => {
       data['api_time'] = new Date().getTime();
       console.log(`Key: ${message.key},\tPartition ${partition},\tStation: ${data["station"]},\tChannel: ${data["channel"]}`);
 
-      const broadcastStart = Date.now();
+      // Use process.hrtime.bigint() for nanosecond resolution (avoids 1ms floor of Date.now())
+      const broadcastStart = process.hrtime.bigint();
       const endpoint = 'waves-data';
 
       for (let client of clients) {
@@ -119,7 +120,8 @@ const initializeWebSocket = (consumer) => {
 
       if (ENABLE_METRICS) {
         wsBroadcastTotal.labels('trace_topic').inc();
-        wsBroadcastLatency.observe((Date.now() - broadcastStart) / 1000);
+        const broadcastNs = Number(process.hrtime.bigint() - broadcastStart);
+        wsBroadcastLatency.observe(broadcastNs / 1e9);
       }
     },
   });
@@ -143,7 +145,8 @@ const initializeWebSocket2 = (consumer2) => {
       data['api_time'] = new Date().getTime();
       console.log(`Key: ${message.key},\tPartition ${partition},\tStation: ${data["station"]},\tChannel: ${data["channel"]}\tloc_mag: ${data["predictions_loc_mag"]}`);
 
-      const broadcastStart = Date.now();
+      // Use process.hrtime.bigint() for nanosecond resolution (avoids 1ms floor of Date.now())
+      const broadcastStart2 = process.hrtime.bigint();
       const endpoint = 'loc-mag-data';
 
       for (let client of clients) {
@@ -152,7 +155,8 @@ const initializeWebSocket2 = (consumer2) => {
 
       if (ENABLE_METRICS) {
         wsBroadcastTotal.labels('result_loc_mag_topic').inc();
-        wsBroadcastLatency.observe((Date.now() - broadcastStart) / 1000);
+        const broadcastNs2 = Number(process.hrtime.bigint() - broadcastStart2);
+        wsBroadcastLatency.observe(broadcastNs2 / 1e9);
       }
     },
   });
