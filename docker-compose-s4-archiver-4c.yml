@@ -282,5 +282,6 @@ services:
     restart: "no"
 
 volumes:
+  influxdb_data:
   prometheus_data:
 

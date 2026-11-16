@@ -248,5 +248,6 @@ services:
     restart: always
 
 volumes:
+  influxdb_data:
   prometheus_data:
 
