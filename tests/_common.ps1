@@ -4,6 +4,8 @@
 # ==============================================================================
 # Gerbang kesiapan: tunggu hingga semua target Prometheus UP dan Data Provider
 # sudah mengirim minimal 1 trace ke Kafka.
+# Bila Prometheus tidak tersedia (kondisi NoMetrics), fallback ke pengecekan
+# offset Kafka langsung.
 # ==============================================================================
 function Wait-SystemReady {
     param(
@@ -15,29 +17,50 @@ function Wait-SystemReady {
     $deadline = (Get-Date).AddSeconds($TimeoutSec)
     Write-Host "Menunggu sistem siap (timeout ${TimeoutSec}s)..." -ForegroundColor Yellow
 
+    # Deteksi apakah Prometheus tersedia di stack ini
+    $prometheusAvailable = $false
+    try {
+        $check = Invoke-RestMethod "$PrometheusUrl/-/ready" -TimeoutSec 5 -ErrorAction Stop
+        $prometheusAvailable = $true
+    } catch {}
+
     while ((Get-Date) -lt $deadline) {
-        # 1. Periksa apakah Prometheus merespons
-        try {
-            $r = Invoke-RestMethod "$PrometheusUrl/api/v1/query?query=up" -TimeoutSec 5 -ErrorAction Stop
-            $upTargets = ($r.data.result | Where-Object { $_.value[1] -eq "1" }).Count
-        } catch {
-            $upTargets = 0
+
+        if ($prometheusAvailable) {
+            # --- Mode normal: cek via Prometheus ---
+            try {
+                $r = Invoke-RestMethod "$PrometheusUrl/api/v1/query?query=up" -TimeoutSec 5 -ErrorAction Stop
+                $upTargets = ($r.data.result | Where-Object { $_.value[1] -eq "1" }).Count
+            } catch { $upTargets = 0 }
+
+            try {
+                $r2 = Invoke-RestMethod "$PrometheusUrl/api/v1/query?query=sum(rate(data_provider_traces_sent_total%5B30s%5D))" -TimeoutSec 5 -ErrorAction Stop
+                $dpRate = [double]($r2.data.result[0].value[1])
+            } catch { $dpRate = 0.0 }
+
+            if ($upTargets -gt 0 -and $dpRate -gt 0) {
+                Write-Host "Sistem siap: $upTargets target UP, laju Data Provider = $([math]::Round($dpRate,2)) trace/s" -ForegroundColor Green
+                return $true
+            }
+            Write-Host "  Menunggu... UP=$upTargets, dp_rate=$([math]::Round($dpRate,3))"
+
+        } else {
+            # --- Fallback NoMetrics: cek offset Kafka langsung ---
+            try {
+                $offset = docker exec kafka1 kafka-run-class.sh kafka.tools.GetOffsetShell `
+                    --broker-list kafka1:9092 --topic trace_topic --time -1 2>$null `
+                    | ForEach-Object { ($_ -split ':')[2] } `
+                    | Measure-Object -Sum | Select-Object -ExpandProperty Sum
+                if ($offset -gt 0) {
+                    Write-Host "Sistem siap (NoMetrics): offset trace_topic = $offset" -ForegroundColor Green
+                    return $true
+                }
+                Write-Host "  Menunggu (NoMetrics)... offset trace_topic = $offset"
+            } catch {
+                Write-Host "  Menunggu (NoMetrics)... kafka belum siap"
+            }
         }
 
-        # 2. Periksa apakah Data Provider sudah mengirim trace
-        try {
-            $r2 = Invoke-RestMethod "$PrometheusUrl/api/v1/query?query=sum(rate(data_provider_traces_sent_total%5B30s%5D))" -TimeoutSec 5 -ErrorAction Stop
-            $dpRate = [double]($r2.data.result[0].value[1])
-        } catch {
-            $dpRate = 0.0
-        }
-
-        if ($upTargets -gt 0 -and $dpRate -gt 0) {
-            Write-Host "Sistem siap: $upTargets target UP, laju Data Provider = $([math]::Round($dpRate,2)) trace/s" -ForegroundColor Green
-            return $true
-        }
-
-        Write-Host "  Menunggu... UP=$upTargets, dp_rate=$([math]::Round($dpRate,3))"
         Start-Sleep $PollSec
     }
 
