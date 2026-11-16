@@ -141,6 +141,8 @@ services:
     build:
       context: .
       dockerfile: p_wave_detector_load_balance/Dockerfile
+    ports:
+      - "8004"
     deploy:
       replicas: 4
     tty: true
