@@ -1,9 +1,9 @@
-# Verifikasi Konfigurasi Docker Compose (S1 - S5)
+﻿# Verifikasi Konfigurasi Docker Compose (S1 - S5)
 
 Dokumen ini menguraikan letak spesifik (ciri khas) dari masing-masing file konfigurasi `docker-compose*.yml` untuk membuktikan bahwa isi konfigurasinya sudah benar-benar sinkron dengan nama filenya dan tidak tertukar.
 
-### [docker-compose-s1-mp_mt.yml](file:///e:/Documents/Bahan Skripsi/Program EEWS/MDLBEEWS/docker-compose-s1-mp_mt.yml)
-- **Data Provider Mode**: Di-override menggunakan environment `DATA_PROVIDER_MODE: "mp_mt"`.
+### [docker-compose-s1-hibrida.yml](file:///e:/Documents/Bahan Skripsi/Program EEWS/MDLBEEWS/docker-compose-s1-hibrida.yml)
+- **Data Provider Mode**: Di-override menggunakan environment `DATA_PROVIDER_MODE: "hibrida"`.
 
 ### [docker-compose-s1-multiprocess.yml](file:///e:/Documents/Bahan Skripsi/Program EEWS/MDLBEEWS/docker-compose-s1-multiprocess.yml)
 - **Data Provider Mode**: Di-override menggunakan environment `DATA_PROVIDER_MODE: "multiprocess"`.
@@ -87,8 +87,8 @@ Dokumen ini menguraikan letak spesifik (ciri khas) dari masing-masing file konfi
 
 Dokumen ini menguraikan letak spesifik (ciri khas) dari masing-masing file konfigurasi `docker-compose*.yml` untuk membuktikan bahwa isi konfigurasinya sudah benar-benar sinkron dengan nama filenya dan tidak tertukar.
 
-### [docker-compose-s1-mp_mt.yml](file:///e:/Documents/Bahan Skripsi/Program EEWS/MDLBEEWS/docker-compose-s1-mp_mt.yml)
-- **Data Provider Mode**: Di-override menggunakan environment `DATA_PROVIDER_MODE: "mp_mt"`.
+### [docker-compose-s1-hibrida.yml](file:///e:/Documents/Bahan Skripsi/Program EEWS/MDLBEEWS/docker-compose-s1-hibrida.yml)
+- **Data Provider Mode**: Di-override menggunakan environment `DATA_PROVIDER_MODE: "hibrida"`.
 
 ### [docker-compose-s1-multiprocess.yml](file:///e:/Documents/Bahan Skripsi/Program EEWS/MDLBEEWS/docker-compose-s1-multiprocess.yml)
 - **Data Provider Mode**: Di-override menggunakan environment `DATA_PROVIDER_MODE: "multiprocess"`.

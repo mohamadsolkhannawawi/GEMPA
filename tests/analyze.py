@@ -273,12 +273,53 @@ def _warn_invalid(label: str, result: Optional[dict]) -> None:
 # Analisis per skenario
 # ==============================================================================
 
+def _read_runs(prefix: str, alt_prefix: Optional[str] = None) -> list:
+    """
+    Kumpulkan semua file _run{N}.csv untuk suatu prefix, kembalikan list result
+    dari read_csv yang valid. Bila tidak ada, coba alt_prefix sebagai fallback.
+    """
+    import glob as _glob
+    pattern = os.path.join(RESULTS_DIR, f"{prefix}_metrics_run*.csv")
+    # Hanya ambil file per-run (bukan _buckets.csv)
+    paths = sorted(
+        p for p in _glob.glob(pattern)
+        if not p.endswith("_buckets.csv")
+    )
+    if not paths and alt_prefix:
+        pattern = os.path.join(RESULTS_DIR, f"{alt_prefix}_metrics_run*.csv")
+        paths = sorted(
+            p for p in _glob.glob(pattern)
+            if not p.endswith("_buckets.csv")
+        )
+    return paths
+
+
+def _merge_run_results(paths: list, label: str) -> tuple[list, str, int, int]:
+    """
+    Baca semua file run, gabungkan kolom dari run-run yang valid, kembalikan
+    (all_values_dict, status_string, n_valid, n_total).
+    """
+    from collections import defaultdict as _dd
+    merged: dict[str, list] = _dd(list)
+    n_valid = 0
+    for path in paths:
+        result = read_csv(path)
+        run_name = os.path.basename(path)
+        _warn_invalid(f"{label}/{run_name}", result)
+        if result and result["valid"]:
+            n_valid += 1
+            for col, vals in result["columns"].items():
+                merged[col].extend(vals)
+    status = "VALID" if n_valid > 0 else "INVALID"
+    return merged, status, n_valid, len(paths)
+
+
 def analyze_s1() -> None:
     scenarios = [
-        ("SEQUENTIAL",  "s1_sequential"),
-        ("MULTITHREAD",  "s1_multithread"),
-        ("MULTIPROCESS", "s1_multiprocess"),
-        ("HIBRIDA",      "s1_hibrida"),
+        ("SEQUENTIAL",   "s1_sequential",   None),
+        ("MULTITHREAD",  "s1_multithread",  None),
+        ("MULTIPROCESS", "s1_multiprocess", None),
+        ("HIBRIDA",      "s1_hibrida",      None),
     ]
     headers = [
         "Arsitektur",
@@ -290,29 +331,40 @@ def analyze_s1() -> None:
         "DP RAM Mean (MB)",
         "PW CPU Mean (%)",
         "PW RAM Mean (MB)",
+        "Run Valid",
         "Status",
     ]
     table_data = []
 
-    for mode_name, prefix in scenarios:
-        path = os.path.join(RESULTS_DIR, f"{prefix}_metrics.csv")
-        if not os.path.exists(path) and prefix == "s1_hibrida":
-            alt_path = os.path.join(RESULTS_DIR, "s1_mp_mt_metrics.csv")
-            if os.path.exists(alt_path):
-                path = alt_path
-        result = read_csv(path)
-        _warn_invalid(mode_name, result)
+    for mode_name, prefix, alt_prefix in scenarios:
+        paths = _read_runs(prefix, alt_prefix)
 
-        status = "VALID" if (result and result["valid"]) else "INVALID"
+        if not paths:
+            # Fallback ke file agregat lama bila tidak ada file per-run sama sekali
+            path = os.path.join(RESULTS_DIR, f"{prefix}_metrics.csv")
+            if alt_prefix and not os.path.exists(path):
+                path = os.path.join(RESULTS_DIR, f"{alt_prefix}_metrics.csv")
+            result = read_csv(path)
+            _warn_invalid(mode_name, result)
+            merged = result["columns"] if (result and result["valid"]) else {}
+            status = "VALID" if (result and result["valid"]) else "INVALID"
+            run_summary = "1/1" if status == "VALID" else "0/1"
+        else:
+            merged, status, n_valid, n_total = _merge_run_results(paths, mode_name)
+            run_summary = f"{n_valid}/{n_total}"
 
-        tp_trace = calc_stats(_get_cols(result, "dp_throughput_trace_topic"))
-        tp_pwave = calc_stats(_get_cols(result, "dp_throughput_pwave_topic"))
-        received = calc_stats(_get_cols(result, "dp_traces_received_per_sec"))
-        dropped  = calc_stats(_get_cols(result, "dp_traces_dropped_stale_per_sec"))
-        dp_cpu   = calc_stats(_get_cols(result, "dp_aggregate_cpu_percent"))
-        dp_mem   = calc_stats(_get_cols(result, "dp_aggregate_mem_mb"))
-        pw_cpu   = calc_stats(_get_cols(result, "pwave_aggregate_cpu_percent"))
-        pw_mem   = calc_stats(_get_cols(result, "pwave_aggregate_mem_mb"))
+        def _cols(key: str) -> list:
+            vals = merged.get(key, [])
+            return [v for v in vals if v is not None]
+
+        tp_trace = calc_stats(_cols("dp_throughput_trace_topic"))
+        tp_pwave = calc_stats(_cols("dp_throughput_pwave_topic"))
+        received = calc_stats(_cols("dp_traces_received_per_sec"))
+        dropped  = calc_stats(_cols("dp_traces_dropped_stale_per_sec"))
+        dp_cpu   = calc_stats(_cols("dp_aggregate_cpu_percent"))
+        dp_mem   = calc_stats(_cols("dp_aggregate_mem_mb"))
+        pw_cpu   = calc_stats(_cols("pwave_aggregate_cpu_percent"))
+        pw_mem   = calc_stats(_cols("pwave_aggregate_mem_mb"))
 
         table_data.append([
             mode_name,
@@ -320,6 +372,7 @@ def analyze_s1() -> None:
             received["mean"], dropped["mean"],
             dp_cpu["mean"], dp_mem["mean"],
             pw_cpu["mean"], pw_mem["mean"],
+            run_summary,
             status,
         ])
 

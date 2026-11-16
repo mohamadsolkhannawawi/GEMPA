@@ -22,7 +22,6 @@ $BaseScenarios = @(
 )
 
 if ($ScenarioName -ne "All") {
-    if ($ScenarioName -eq "MP_MT" -or $ScenarioName -eq "mp_mt" -or $ScenarioName -eq "Hybrid") { $ScenarioName = "Hibrida" }
     $BaseScenarios = $BaseScenarios | Where-Object { $_.Name -eq $ScenarioName }
     if (-not $BaseScenarios) {
         Write-Host "Skenario '$ScenarioName' tidak ditemukan." -ForegroundColor Red; exit 1

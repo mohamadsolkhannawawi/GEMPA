@@ -188,7 +188,7 @@ if __name__ == '__main__':
             num_processes=num_processes,
             num_station_configs=num_stations,
         )
-    elif mode in ("hibrida", "mp_mt"):
+    elif mode == "hibrida":
         from multi_process_thread import main
         main(
             server=SEEDLINK_SERVER,
