@@ -215,62 +215,82 @@ class TraceConsumer:
 
     def connectConsumer(self) -> None:
         """Loop utama consumer: terima pesan, spawn thread pemrosesan."""
+        import time as _time
         logger.info(f"Memulai consumer loop pada topik {KAFKA_TOPIC_PWAVE}...")
-        for msg in self.consumer:
-            arrive_time = time()
-            data = msg.value
-            data_delay = arrive_time - data['data_provider_time']
+        while True:
+            try:
+                for msg in self.consumer:
+                    arrive_time = time()
+                    data = msg.value
+                    data_delay = arrive_time - data['data_provider_time']
 
-            # --- Kafka delay ---
-            if ENABLE_METRICS and PWAVE_KAFKA_DELAY:
-                PWAVE_KAFKA_DELAY.observe(data_delay)
+                    # --- Kafka delay ---
+                    if ENABLE_METRICS and PWAVE_KAFKA_DELAY:
+                        PWAVE_KAFKA_DELAY.observe(data_delay)
 
-            if ENABLE_METRICS and PWAVE_REQUESTS:
-                PWAVE_REQUESTS.inc()
+                    if ENABLE_METRICS and PWAVE_REQUESTS:
+                        PWAVE_REQUESTS.inc()
 
-            # --- [A2] Bangun salinan mandiri masukan di dalam lock SEBELUM spawn thread ---
-            # Urutan di dalam lock:
-            #   1. Ambil salinan cache lama
-            #   2. Gabungkan dengan paket baru
-            #   3. Simpan kembali ke cache (potong bila perlu)
-            #   4. Buat salinan mandiri untuk dikirim ke worker
-            # Ini mencegah aliasing: thread tidak berbagi objek list yang sama
-            # dengan cache, sehingga operasi extend/assign berikutnya tidak
-            # memodifikasi data yang sudah dikirim ke worker.
-            key = f"{data['station']}-{data['channel']}"
-            with self.cache_lock:
-                cached_data = self.last_waveform.get(key)
-                if cached_data:
-                    combined = list(cached_data) + list(data['data'])
-                else:
-                    combined = list(data['data'])
+                    # --- [A2] Bangun salinan mandiri masukan di dalam lock SEBELUM spawn thread ---
+                    # Urutan di dalam lock:
+                    #   1. Ambil salinan cache lama
+                    #   2. Gabungkan dengan paket baru
+                    #   3. Simpan kembali ke cache (potong bila perlu)
+                    #   4. Buat salinan mandiri untuk dikirim ke worker
+                    # Ini mencegah aliasing: thread tidak berbagi objek list yang sama
+                    # dengan cache, sehingga operasi extend/assign berikutnya tidak
+                    # memodifikasi data yang sudah dikirim ke worker.
+                    key = f"{data['station']}-{data['channel']}"
+                    with self.cache_lock:
+                        cached_data = self.last_waveform.get(key)
+                        if cached_data:
+                            combined = list(cached_data) + list(data['data'])
+                        else:
+                            combined = list(data['data'])
 
-                # Perbarui cache dengan paket terbaru saja (bukan combined)
-                new_cache = list(data['data'])
-                cut_length = int(4 * data['sampling_rate'])
-                if len(new_cache) > cut_length:
-                    new_cache = new_cache[-cut_length:]
-                self.last_waveform[key] = new_cache
+                        # Perbarui cache dengan paket terbaru saja (bukan combined)
+                        new_cache = list(data['data'])
+                        cut_length = int(4 * data['sampling_rate'])
+                        if len(new_cache) > cut_length:
+                            new_cache = new_cache[-cut_length:]
+                        self.last_waveform[key] = new_cache
 
-                # Buat salinan data yang akan dikirim ke worker (mandiri dari cache)
-                worker_data = dict(data)
-                worker_data['data'] = combined
-                if cached_data:
-                    worker_data['start_time'] = data['start_time'] - 4
-                worker_data['npts'] = len(combined)
-                worker_data['sample_cnt'] = len(combined)
-                worker_data['num_samples'] = len(combined)
+                        # Buat salinan data yang akan dikirim ke worker (mandiri dari cache)
+                        worker_data = dict(data)
+                        worker_data['data'] = combined
+                        if cached_data:
+                            worker_data['start_time'] = data['start_time'] - 4
+                        worker_data['npts'] = len(combined)
+                        worker_data['sample_cnt'] = len(combined)
+                        worker_data['num_samples'] = len(combined)
 
-                cache_size = len(self.last_waveform)
+                        cache_size = len(self.last_waveform)
 
-            threading.Thread(
-                target=self._run_predict_from_combined,
-                args=(worker_data, data_delay, arrive_time),
-                daemon=True,
-            ).start()
+                    threading.Thread(
+                        target=self._run_predict_from_combined,
+                        args=(worker_data, data_delay, arrive_time),
+                        daemon=True,
+                    ).start()
 
-            if ENABLE_METRICS and PWAVE_CACHE_SIZE:
-                PWAVE_CACHE_SIZE.set(cache_size)
+                    if ENABLE_METRICS and PWAVE_CACHE_SIZE:
+                        PWAVE_CACHE_SIZE.set(cache_size)
+
+                # for loop selesai berarti consumer disconnect / rebalance timeout
+                logger.warning(
+                    "Consumer loop berakhir (disconnect/rebalance). Reconnect dalam 5s..."
+                )
+
+            except Exception as e:
+                logger.error(f"Exception di consumer loop: {e}. Reconnect dalam 5s...")
+
+            _time.sleep(5)
+            try:
+                self.consumer = get_consumer(
+                    KAFKA_TOPIC_PWAVE, 'trace_group', KAFKA_BROKERS_PWAVE
+                )
+                logger.info("Reconnect ke Kafka berhasil. Melanjutkan consumer loop...")
+            except Exception as re:
+                logger.error(f"Reconnect gagal: {re}. Coba lagi dalam 5s...")
 
     def _run_predict_from_combined(
         self,
