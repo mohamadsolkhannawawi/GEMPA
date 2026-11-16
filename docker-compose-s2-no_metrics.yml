@@ -109,6 +109,7 @@ services:
     env_file:
       - .env
     environment:
+      DATA_PROVIDER_MODE: "multiprocess"
       ENABLE_METRICS: "false"
     healthcheck:
       test: ["CMD", "true"]

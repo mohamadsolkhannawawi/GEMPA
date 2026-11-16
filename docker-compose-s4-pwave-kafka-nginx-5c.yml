@@ -193,6 +193,7 @@ services:
       context: .
       dockerfile: load_balancer/Dockerfile
     environment:
+      DATA_PROVIDER_MODE: "multiprocess"
       LB_TARGET_URL: "http://nginx_load_balancer:80/trace"
     deploy:
       replicas: 1

@@ -156,6 +156,8 @@ services:
     tty: true
     env_file:
       - .env
+    environment:
+      DATA_PROVIDER_MODE: "multiprocess"
     depends_on:
       - kafka1
     restart: always
