@@ -199,6 +199,8 @@ services:
     tty: true
     env_file:
       - .env
+    environment:
+      LB_TARGET_URL: "http://nginx_load_balancer:80/trace"
     depends_on:
       - kafka1
     restart: always
