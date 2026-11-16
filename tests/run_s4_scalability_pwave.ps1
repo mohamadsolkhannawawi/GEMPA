@@ -1,4 +1,4 @@
-# run_s4_scalability_pwave.ps1 — Skenario S4B: Skalabilitas P-Wave Detector
+﻿# run_s4_scalability_pwave.ps1 — Skenario S4B: Skalabilitas P-Wave Detector
 param (
     [int]$DurationSec    = 300,
     [int]$Repeat         = 3,
@@ -20,7 +20,8 @@ $BaseScenarios = @(
     @{ Name="KafkaNginx2c"; File="docker-compose-s4-pwave-kafka-nginx-2c.yml"; OutMetrics="tests/results/s4_pwave_kafka_nginx_2c_metrics.csv" },
     @{ Name="KafkaNginx3c"; File="docker-compose-s4-pwave-kafka-nginx-3c.yml"; OutMetrics="tests/results/s4_pwave_kafka_nginx_3c_metrics.csv" },
     @{ Name="KafkaNginx4c"; File="docker-compose-s4-pwave-kafka-nginx-4c.yml"; OutMetrics="tests/results/s4_pwave_kafka_nginx_4c_metrics.csv" },
-    @{ Name="KafkaNginx5c"; File="docker-compose-s4-pwave-kafka-nginx-5c.yml"; OutMetrics="tests/results/s4_pwave_kafka_nginx_5c_metrics.csv" }
+    @{ Name="KafkaNginx5c"; File="docker-compose-s4-pwave-kafka-nginx-5c.yml"; OutMetrics="tests/results/s4_pwave_kafka_nginx_5c_metrics.csv" },
+    @{ Name="KafkaNginx6c"; File="docker-compose-s4-pwave-kafka-nginx-6c.yml"; OutMetrics="tests/results/s4_pwave_kafka_nginx_6c_metrics.csv" }
 )
 
 if ($ScenarioName -ne "All") {
