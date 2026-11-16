@@ -278,7 +278,7 @@ def analyze_s1() -> None:
         ("SEQUENTIAL",  "s1_sequential"),
         ("MULTITHREAD",  "s1_multithread"),
         ("MULTIPROCESS", "s1_multiprocess"),
-        ("HIBRIDA (MP_MT)", "s1_mp_mt"),
+        ("HIBRIDA",      "s1_hibrida"),
     ]
     headers = [
         "Arsitektur",
@@ -296,6 +296,10 @@ def analyze_s1() -> None:
 
     for mode_name, prefix in scenarios:
         path = os.path.join(RESULTS_DIR, f"{prefix}_metrics.csv")
+        if not os.path.exists(path) and prefix == "s1_hibrida":
+            alt_path = os.path.join(RESULTS_DIR, "s1_mp_mt_metrics.csv")
+            if os.path.exists(alt_path):
+                path = alt_path
         result = read_csv(path)
         _warn_invalid(mode_name, result)
 

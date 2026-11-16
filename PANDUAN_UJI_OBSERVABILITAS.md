@@ -180,7 +180,7 @@ cd tests
 ---
 
 ### S1: Strategi Konkurensi Data Provider
-Mengevaluasi kinerja empat mekanisme konkurensi (Sekuensial, Multi-Threading, Multi-Processing, dan Gabungan MP+MT) dalam menyerap data SeedLink tanpa mengalami kelaparan data (*data starvation*).
+Mengevaluasi kinerja empat mekanisme konkurensi (Sekuensial, Multi-Threading, Multi-Processing, dan Hibrida) dalam menyerap data SeedLink tanpa mengalami kelaparan data (*data starvation*).
 
 ```powershell
 # Eksekusi seluruh variasi S1 dengan 3 pengulangan acak
@@ -190,7 +190,7 @@ Mengevaluasi kinerja empat mekanisme konkurensi (Sekuensial, Multi-Threading, Mu
 .\run_s1_dataprovider.ps1 -ScenarioName Sequential -Repeat 3
 .\run_s1_dataprovider.ps1 -ScenarioName Multithread -Repeat 3
 .\run_s1_dataprovider.ps1 -ScenarioName Multiprocess -Repeat 3
-.\run_s1_dataprovider.ps1 -ScenarioName MP_MT -Repeat 3
+.\run_s1_dataprovider.ps1 -ScenarioName Hibrida -Repeat 3
 ```
 
 ---

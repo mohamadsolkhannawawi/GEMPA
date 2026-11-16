@@ -18,11 +18,11 @@ $BaseScenarios = @(
     @{ Name="Sequential";   File="docker-compose-s1-sequential.yml";   OutMetrics="tests/results/s1_sequential_metrics.csv"   },
     @{ Name="Multiprocess"; File="docker-compose-s1-multiprocess.yml"; OutMetrics="tests/results/s1_multiprocess_metrics.csv" },
     @{ Name="Multithread";  File="docker-compose-s1-multithread.yml";  OutMetrics="tests/results/s1_multithread_metrics.csv"  },
-    @{ Name="MP_MT";        File="docker-compose-s1-mp_mt.yml";        OutMetrics="tests/results/s1_mp_mt_metrics.csv"        }
+    @{ Name="Hibrida";      File="docker-compose-s1-hibrida.yml";      OutMetrics="tests/results/s1_hibrida_metrics.csv"      }
 )
 
 if ($ScenarioName -ne "All") {
-    if ($ScenarioName -eq "Hibrida" -or $ScenarioName -eq "Hybrid") { $ScenarioName = "MP_MT" }
+    if ($ScenarioName -eq "MP_MT" -or $ScenarioName -eq "mp_mt" -or $ScenarioName -eq "Hybrid") { $ScenarioName = "Hibrida" }
     $BaseScenarios = $BaseScenarios | Where-Object { $_.Name -eq $ScenarioName }
     if (-not $BaseScenarios) {
         Write-Host "Skenario '$ScenarioName' tidak ditemukan." -ForegroundColor Red; exit 1

@@ -157,7 +157,7 @@ services:
     env_file:
       - .env
     environment:
-      DATA_PROVIDER_MODE: "mp_mt"
+      DATA_PROVIDER_MODE: "hibrida"
     depends_on:
       - kafka1
     restart: always
