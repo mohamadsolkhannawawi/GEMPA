@@ -61,7 +61,11 @@ def collect_kafka_offsets(
     headers = ["timestamp"] + [f"{t}_messages_per_sec" for t in topics]
 
     # Buat satu consumer untuk seluruh durasi pengukuran
-    consumer = KafkaConsumer(bootstrap_servers=brokers)
+    consumer = KafkaConsumer(
+        bootstrap_servers=brokers,
+        request_timeout_ms=30000,
+        api_version_auto_timeout_ms=30000,
+    )
     try:
         # Ambil snapshot pertama
         prev_offsets = {t: _sum_offsets(_get_end_offsets(consumer, t)) for t in topics}
