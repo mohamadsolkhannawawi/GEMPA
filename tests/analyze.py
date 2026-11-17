@@ -599,6 +599,11 @@ def analyze_s3() -> None:
 
 
 def analyze_s4() -> None:
+    analyze_s4a()
+    analyze_s4b()
+
+
+def analyze_s4a() -> None:
     # --- 4A: Archiver ---
     headers_a = [
         "Replika Archiver",
@@ -657,6 +662,8 @@ def analyze_s4() -> None:
         headers_a, table_data_a, "summary_s4a_archiver.csv",
     )
 
+
+def analyze_s4b() -> None:
     # --- 4B: P-Wave Detector ---
     scenarios_b = [
         ("Native Kafka",  "s4_pwave_kafka",       False, range(2, 6)),
@@ -819,8 +826,10 @@ if __name__ == "__main__":
         analyze_s2()
     elif args.scenario in ("3", "s3"):
         analyze_s3()
-    elif args.scenario in ("4", "s4_archiver", "s4_pwave"):
-        analyze_s4()
+    elif args.scenario in ("4", "s4_archiver"):
+        analyze_s4a()
+    elif args.scenario in ("s4_pwave",):
+        analyze_s4b()
     elif args.scenario in ("5", "s5"):
         analyze_s5()
     elif args.scenario in ("all", "final"):
