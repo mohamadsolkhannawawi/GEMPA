@@ -643,6 +643,7 @@ def analyze_all() -> None:
 
 
 if __name__ == "__main__":
+    global WARMUP_SEC, WINDOW_SEC
     parser = argparse.ArgumentParser(description="EEWS Test Result Analyzer")
     parser.add_argument(
         "--scenario",
@@ -665,7 +666,6 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # Override global jendela bila diberikan lewat argumen
-    global WARMUP_SEC, WINDOW_SEC
     WARMUP_SEC = args.warmup_sec
     WINDOW_SEC = args.window_sec
 
