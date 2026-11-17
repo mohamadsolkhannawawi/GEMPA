@@ -1,4 +1,4 @@
-# run_s4_scalability_pwave.ps1 — Skenario S4B: Skalabilitas P-Wave Detector
+# run_s4_scalability_pwave.ps1 - Skenario S4B: Skalabilitas P-Wave Detector
 param (
     [int]$DurationSec    = 300,
     [int]$Repeat         = 3,
