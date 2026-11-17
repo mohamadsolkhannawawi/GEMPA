@@ -382,6 +382,27 @@ def analyze_s1() -> None:
     )
 
 
+def _actual_interval(path: str) -> float:
+    """Hitung rata-rata interval antar sampel dari file CSV."""
+    import csv as _csv
+    try:
+        with open(path, newline="", encoding="utf-8-sig") as f:
+            rows = list(_csv.DictReader(f))
+        if len(rows) < 2:
+            return DEFAULT_INTERVAL_SEC
+        times = []
+        for r in rows:
+            t = parse_timestamp(r.get("timestamp", ""))
+            if t:
+                times.append(t)
+        if len(times) < 2:
+            return DEFAULT_INTERVAL_SEC
+        total = (times[-1] - times[0]).total_seconds()
+        return total / (len(times) - 1)
+    except Exception:
+        return DEFAULT_INTERVAL_SEC
+
+
 def analyze_s2() -> None:
     scenarios = [
         ("Tanpa Metrics (CLI)", "s2_overhead_no_metrics_cli", False),
@@ -415,16 +436,23 @@ def analyze_s2() -> None:
                 merged_cols: dict = {}
                 n_valid = 0
                 for p in paths:
-                    # NoMetrics interval ~7-8s (docker stats lebih lambat dari Prometheus)
-                    r = read_csv(p, interval_sec=8.0)
+                    # Hitung interval aktual dari data (CLI ~7s, API ~10s)
+                    actual_interval = _actual_interval(p)
+                    r = read_csv(p, interval_sec=actual_interval)
                     run_name = os.path.basename(p)
                     if r is not None:
-                        # Override validasi: cukup punya kolom pwave
+                        # Validasi ulang: cukup minimal 10 sampel PW CPU valid
+                        # (read_csv mungkin sudah mengisi kolom meski status invalid)
                         pw_vals = r["columns"].get("pwave_aggregate_cpu_percent", [])
                         valid_pw = [v for v in pw_vals if v is not None]
-                        r["valid"] = len(valid_pw) >= 10
-                        if not r["valid"]:
-                            r["invalid_reason"] = f"Kurang dari 10 sampel PW CPU valid ({len(valid_pw)} sampel)"
+                        if len(valid_pw) >= 10:
+                            r["valid"] = True
+                        else:
+                            r["valid"] = False
+                            r["invalid_reason"] = (
+                                f"Kurang dari 10 sampel PW CPU valid "
+                                f"({len(valid_pw)} sampel)"
+                            )
                     _warn_invalid(f"{label}/{run_name}", r)
                     if r and r["valid"]:
                         n_valid += 1
@@ -434,8 +462,31 @@ def analyze_s2() -> None:
                 status = "VALID" if n_valid > 0 else "INVALID"
                 run_summary = f"{n_valid}/{len(paths)}"
             else:
-                merged, status, n_valid, n_total = _merge_run_results(paths, label)
-                run_summary = f"{n_valid}/{n_total}"
+                # WithMetrics: gunakan _merge_run_results tapi izinkan
+                # kolom latensi histogram kosong (opsional untuk S2)
+                from collections import defaultdict as _dd
+                merged_cols2: dict = _dd(list)
+                n_valid = 0
+                for p in paths:
+                    r = read_csv(p)
+                    run_name = os.path.basename(p)
+                    if r is not None:
+                        # Override: valid jika CPU dan throughput tersedia
+                        cpu_vals = [v for v in r["columns"].get(
+                            "pwave_aggregate_cpu_percent", []) if v is not None]
+                        dp_vals  = [v for v in r["columns"].get(
+                            "dp_aggregate_cpu_percent", []) if v is not None]
+                        if len(cpu_vals) >= 10 and len(dp_vals) >= 10:
+                            r["valid"] = True
+                        # Jika sudah valid dari read_csv, biarkan
+                    _warn_invalid(f"{label}/{run_name}", r)
+                    if r and r["valid"]:
+                        n_valid += 1
+                        for col, vals in r["columns"].items():
+                            merged_cols2[col].extend(vals)
+                merged = merged_cols2
+                status = "VALID" if n_valid > 0 else "INVALID"
+                run_summary = f"{n_valid}/{len(paths)}"
 
         def _cols(key: str) -> list:
             vals = merged.get(key, [])
