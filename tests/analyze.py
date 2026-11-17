@@ -499,55 +499,97 @@ def analyze_s2() -> None:
 
 
 def analyze_s3() -> None:
+    """
+    S3: Kafka Native vs Kafka + NGINX Load Balancer.
+
+    Kedua kondisi menggunakan service berbeda dengan nama metric berbeda:
+      Kafka Native      -> p_wave_detector       -> pwave_*
+      Kafka + NGINX     -> p_wave_detector_lb     -> pwave_lb_*
+
+    Kolom yang dipilih disesuaikan per kondisi agar tidak ada false no_data.
+    """
+    scenarios = [
+        ("Kafka Native",  "s3_broker_kafka", False),
+        ("Kafka + NGINX", "s3_broker_nginx",  True),
+    ]
     headers = [
         "Arsitektur Broker",
+        "Throughput pwave_topic (tr/s)",
         "E2E P-Wave Mean (ms)", "E2E P-Wave P95 (ms)",
         "Kafka Delay P95 (ms)", "Queue Wait P95 (ms)",
         "Inferensi P95 (ms)",
         "Laju Deteksi (det/s)",
         "Inflight Mean",
         "CPU Mean (%)", "RAM Mean (MB)",
-        "Run Valid",
-        "Status",
+        "Consumer Lag Mean",
+        "Run Valid", "Status",
     ]
     table_data = []
 
-    for mode_label, prefix in [("Kafka Native", "s3_broker_kafka"), ("Kafka + NGINX", "s3_broker_nginx")]:
+    for mode_label, prefix, is_lb in scenarios:
         paths = _read_runs(prefix)
 
-        if not paths:
-            path = os.path.join(RESULTS_DIR, f"{prefix}_metrics.csv")
-            result = read_csv(path)
-            _warn_invalid(mode_label, result)
-            merged = result["columns"] if (result and result["valid"]) else {}
-            status = "VALID" if (result and result["valid"]) else "INVALID"
-            run_summary = "1/1" if status == "VALID" else "0/1"
-        else:
-            merged, status, n_valid, n_total = _merge_run_results(paths, mode_label)
-            run_summary = f"{n_valid}/{n_total}"
+        merged_cols: dict = {}
+        n_valid = 0
+        for p in paths:
+            actual_interval = _actual_interval(p)
+            r = read_csv(p, interval_sec=actual_interval)
+            run_name = os.path.basename(p)
+            if r is not None:
+                # Validasi: cukup CPU dan throughput tersedia
+                cpu_vals = [v for v in r["columns"].get(
+                    "pwave_aggregate_cpu_percent", []) if v is not None]
+                tp_vals  = [v for v in r["columns"].get(
+                    "dp_throughput_pwave_topic", []) if v is not None]
+                if len(cpu_vals) >= 10 or len(tp_vals) >= 10:
+                    r["valid"] = True
+            _warn_invalid(f"{mode_label}/{run_name}", r)
+            if r and r["valid"]:
+                n_valid += 1
+                for col, vals in r["columns"].items():
+                    merged_cols.setdefault(col, []).extend(vals)
+
+        status = "VALID" if n_valid > 0 else "INVALID"
+        run_summary = f"{n_valid}/{len(paths)}" if paths else "0/0"
 
         def _cols(key: str) -> list:
-            vals = merged.get(key, [])
-            return [v for v in vals if v is not None]
+            return [v for v in merged_cols.get(key, []) if v is not None]
 
-        e2e  = calc_latency_stats(_cols("e2e_delay_pwave_p95"))
-        kd   = calc_latency_stats(_cols("pwave_kafka_delay_p95") or _cols("pwave_lb_kafka_delay_p95"))
-        qw   = calc_latency_stats(_cols("pwave_queue_wait_p95") or _cols("pwave_lb_queue_wait_p95"))
-        lat  = calc_latency_stats(_cols("pwave_inference_latency_p95") or _cols("pwave_lb_inference_latency_p95"))
-        det  = calc_stats(_cols("pwave_detection_rate") or _cols("pwave_lb_detection_rate"))
-        inf  = calc_stats(_cols("pwave_inflight") or _cols("pwave_lb_inflight"))
-        cpu  = calc_stats(_cols("pwave_aggregate_cpu_percent"))
-        mem  = calc_stats(_cols("pwave_aggregate_mem_mb"))
+        # Pilih kolom yang sesuai dengan arsitektur
+        if is_lb:
+            lat_col = "pwave_lb_inference_latency_p95"
+            kd_col  = "pwave_lb_kafka_delay_p95"
+            qw_col  = "pwave_lb_queue_wait_p95"
+            det_col = "pwave_lb_detection_rate"
+            inf_col = "pwave_lb_inflight"
+        else:
+            lat_col = "pwave_inference_latency_p95"
+            kd_col  = "pwave_kafka_delay_p95"
+            qw_col  = "pwave_queue_wait_p95"
+            det_col = "pwave_detection_rate"
+            inf_col = "pwave_inflight"
+
+        tp  = calc_stats(_cols("dp_throughput_pwave_topic"))
+        e2e = calc_latency_stats(_cols("e2e_delay_pwave_p95"))
+        kd  = calc_latency_stats(_cols(kd_col))
+        qw  = calc_latency_stats(_cols(qw_col))
+        lat = calc_latency_stats(_cols(lat_col))
+        det = calc_stats(_cols(det_col))
+        inf = calc_stats(_cols(inf_col))
+        cpu = calc_stats(_cols("pwave_aggregate_cpu_percent"))
+        mem = calc_stats(_cols("pwave_aggregate_mem_mb"))
+        lag = calc_stats(_cols("kafka_consumer_lag_total"))
 
         table_data.append([
             mode_label,
+            tp["mean"],
             e2e["mean"], e2e["p95_of_window_p95"],
             kd["p95_of_window_p95"], qw["p95_of_window_p95"],
             lat["p95_of_window_p95"],
             det["mean"], inf["mean"],
             cpu["mean"], mem["mean"],
-            run_summary,
-            status,
+            lag["mean"],
+            run_summary, status,
         ])
 
     save_and_print_table(
