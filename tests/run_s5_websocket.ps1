@@ -8,7 +8,6 @@ param (
 
 . "$PSScriptRoot\_common.ps1"
 
-$PythonExe = "python"
 $RootDir   = Split-Path -Parent $PSScriptRoot
 Set-Location $RootDir
 

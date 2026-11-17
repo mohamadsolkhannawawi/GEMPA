@@ -2,6 +2,47 @@
 # Disertakan (dot-source) oleh run_s*.ps1.
 
 # ==============================================================================
+# Resolve Python executable yang memiliki semua dependensi yang dibutuhkan.
+# Dicek sekali saat dot-source; hasilnya disimpan di $PythonExe supaya semua
+# script langsung bisa menggunakan variabel ini tanpa hardcode path.
+# ==============================================================================
+function Resolve-PythonExe {
+    $candidates = @(
+        "C:\Users\HP\AppData\Local\Programs\Python\Python312\python.exe",
+        "python3",
+        "python"
+    )
+    $required = @("kafka", "requests", "numpy")
+
+    foreach ($candidate in $candidates) {
+        try {
+            $exePath = (Get-Command $candidate -ErrorAction Stop).Source
+        } catch {
+            # Jika bukan perintah di PATH, cek langsung sebagai path file
+            if (-not (Test-Path $candidate)) { continue }
+            $exePath = $candidate
+        }
+
+        $missing = @()
+        foreach ($mod in $required) {
+            $check = & $exePath -c "import $mod" 2>&1
+            if ($LASTEXITCODE -ne 0) { $missing += $mod }
+        }
+
+        if ($missing.Count -eq 0) {
+            Write-Host "Python OK: $exePath" -ForegroundColor DarkGray
+            return $exePath
+        }
+    }
+
+    Write-Host "[ERROR] Tidak ada Python dengan modul lengkap (kafka, requests, numpy)." -ForegroundColor Red
+    Write-Host "        Jalankan: pip install kafka-python-ng requests numpy docker websockets" -ForegroundColor Red
+    exit 1
+}
+
+$PythonExe = Resolve-PythonExe
+
+# ==============================================================================
 # Gerbang kesiapan: tunggu hingga semua target Prometheus UP dan Data Provider
 # sudah mengirim minimal 1 trace ke Kafka.
 # Bila Prometheus tidak tersedia (kondisi NoMetrics), fallback ke pengecekan
@@ -94,7 +135,11 @@ function Save-RunMetadata {
     try { $composeHash = (Get-FileHash $ComposeFile -Algorithm SHA256).Hash.Substring(0,12) } catch {}
 
     $envHash = ""
-    try { $envHash = (Get-FileHash ".env" -Algorithm SHA256).Hash.Substring(0,12) } catch {}
+    $envContent = ""
+    try {
+        $envHash    = (Get-FileHash ".env" -Algorithm SHA256).Hash.Substring(0,12)
+        $envContent = (Get-Content ".env" -Raw -ErrorAction Stop)
+    } catch {}
 
     $kafkaTopics = ""
     try {
@@ -102,13 +147,15 @@ function Save-RunMetadata {
     } catch {}
 
     $meta = @{
-        timestamp     = (Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ")
-        scenario      = $ScenarioName
-        run_index     = $RunIndex
-        git_commit    = $gitHash
-        compose_file  = $ComposeFile
-        compose_hash  = $composeHash
-        env_hash      = $envHash
+        timestamp      = (Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ")
+        scenario       = $ScenarioName
+        run_index      = $RunIndex
+        git_commit     = $gitHash
+        compose_file   = $ComposeFile
+        compose_hash   = $composeHash
+        env_hash       = $envHash
+        env_snapshot   = $envContent
+        python_exe     = $PythonExe
         kafka_describe = $kafkaTopics
     }
 
