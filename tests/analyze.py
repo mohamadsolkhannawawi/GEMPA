@@ -607,22 +607,40 @@ def analyze_s4() -> None:
         "Records Saved (rec/s)",
         "Write Latency InfluxDB P95 (ms)",
         "Write Latency MongoDB P95 (ms)",
-        "Status",
+        "Run Valid", "Status",
     ]
     table_data_a = []
 
     for i in range(1, 6):
-        path = os.path.join(RESULTS_DIR, f"s4_archiver_{i}_container_metrics.csv")
-        result = read_csv(path)
-        _warn_invalid(f"Archiver {i}c", result)
+        paths = _read_runs(f"s4_archiver_{i}_container")
+        merged_cols: dict = {}
+        n_valid = 0
+        for p in paths:
+            actual_interval = _actual_interval(p)
+            r = read_csv(p, interval_sec=actual_interval)
+            run_name = os.path.basename(p)
+            if r is not None:
+                cpu_vals = [v for v in r["columns"].get(
+                    "archiver_aggregate_cpu_percent", []) if v is not None]
+                if len(cpu_vals) >= 10:
+                    r["valid"] = True
+            _warn_invalid(f"Archiver {i}c/{run_name}", r)
+            if r and r["valid"]:
+                n_valid += 1
+                for col, vals in r["columns"].items():
+                    merged_cols.setdefault(col, []).extend(vals)
 
-        status = "VALID" if (result and result["valid"]) else "INVALID"
+        status = "VALID" if n_valid > 0 else "INVALID"
+        run_summary = f"{n_valid}/{len(paths)}" if paths else "0/0"
 
-        cpu    = calc_stats(_get_cols(result, "archiver_aggregate_cpu_percent"))
-        mem    = calc_stats(_get_cols(result, "archiver_aggregate_mem_mb"))
-        saved  = calc_stats(_get_cols(result, "archiver_records_saved_rate"))
-        lat_if = calc_latency_stats(_get_cols(result, "archiver_write_latency_influxdb_p95"))
-        lat_mg = calc_latency_stats(_get_cols(result, "archiver_write_latency_mongodb_p95"))
+        def _cols_a(key: str) -> list:
+            return [v for v in merged_cols.get(key, []) if v is not None]
+
+        cpu    = calc_stats(_cols_a("archiver_aggregate_cpu_percent"))
+        mem    = calc_stats(_cols_a("archiver_aggregate_mem_mb"))
+        saved  = calc_stats(_cols_a("archiver_records_saved_rate"))
+        lat_if = calc_latency_stats(_cols_a("archiver_write_latency_influxdb_p95"))
+        lat_mg = calc_latency_stats(_cols_a("archiver_write_latency_mongodb_p95"))
 
         table_data_a.append([
             f"{i} Container",
@@ -631,7 +649,7 @@ def analyze_s4() -> None:
             saved["mean"],
             lat_if["p95_of_window_p95"],
             lat_mg["p95_of_window_p95"],
-            status,
+            run_summary, status,
         ])
 
     save_and_print_table(
@@ -641,8 +659,8 @@ def analyze_s4() -> None:
 
     # --- 4B: P-Wave Detector ---
     scenarios_b = [
-        ("Native Kafka",  "s4_pwave_kafka"),
-        ("Load Balancer", "s4_pwave_kafka_nginx"),
+        ("Native Kafka",  "s4_pwave_kafka",       False, range(2, 6)),
+        ("Load Balancer", "s4_pwave_kafka_nginx",  True,  range(2, 7)),
     ]
     headers_b = [
         "Arsitektur", "Replika ML",
@@ -651,28 +669,48 @@ def analyze_s4() -> None:
         "Latensi Inferensi P95 (ms)",
         "E2E P95 (ms)",
         "CPU Mean (%)", "RAM Mean (MB)",
-        "Status",
+        "Run Valid", "Status",
     ]
     table_data_b = []
 
-    for mode_label, prefix in scenarios_b:
-        for i in range(2, 6):
-            path = os.path.join(RESULTS_DIR, f"{prefix}_{i}c_metrics.csv")
-            result = read_csv(path)
-            _warn_invalid(f"{mode_label} {i}c", result)
+    for mode_label, prefix, is_lb, replika_range in scenarios_b:
+        for i in replika_range:
+            paths = _read_runs(f"{prefix}_{i}c")
+            merged_cols2: dict = {}
+            n_valid = 0
+            for p in paths:
+                actual_interval = _actual_interval(p)
+                r = read_csv(p, interval_sec=actual_interval)
+                run_name = os.path.basename(p)
+                if r is not None:
+                    cpu_vals = [v for v in r["columns"].get(
+                        "pwave_aggregate_cpu_percent", []) if v is not None]
+                    tp_vals  = [v for v in r["columns"].get(
+                        "dp_throughput_pwave_topic", []) if v is not None]
+                    if len(cpu_vals) >= 10 or len(tp_vals) >= 10:
+                        r["valid"] = True
+                _warn_invalid(f"{mode_label} {i}c/{run_name}", r)
+                if r and r["valid"]:
+                    n_valid += 1
+                    for col, vals in r["columns"].items():
+                        merged_cols2.setdefault(col, []).extend(vals)
 
-            status = "VALID" if (result and result["valid"]) else "INVALID"
+            status = "VALID" if n_valid > 0 else "INVALID"
+            run_summary = f"{n_valid}/{len(paths)}" if paths else "0/0"
 
-            tp    = calc_stats(_get_cols(result, "dp_throughput_pwave_topic"))
-            det   = calc_stats(_get_cols(result, "pwave_detection_rate") or
-                                _get_cols(result, "pwave_lb_detection_rate"))
-            # Latensi — pilih metrik yang tersedia
-            lat_raw  = (_get_cols(result, "pwave_inference_latency_p95") or
-                        _get_cols(result, "pwave_lb_inference_latency_p95"))
-            lat   = calc_latency_stats(lat_raw)
-            e2e   = calc_latency_stats(_get_cols(result, "e2e_delay_pwave_p95"))
-            cpu   = calc_stats(_get_cols(result, "pwave_aggregate_cpu_percent"))
-            mem   = calc_stats(_get_cols(result, "pwave_aggregate_mem_mb"))
+            def _cols_b(key: str) -> list:
+                return [v for v in merged_cols2.get(key, []) if v is not None]
+
+            # Pilih kolom metrik sesuai arsitektur
+            det_col = "pwave_lb_detection_rate" if is_lb else "pwave_detection_rate"
+            lat_col = "pwave_lb_inference_latency_p95" if is_lb else "pwave_inference_latency_p95"
+
+            tp  = calc_stats(_cols_b("dp_throughput_pwave_topic"))
+            det = calc_stats(_cols_b(det_col))
+            lat = calc_latency_stats(_cols_b(lat_col))
+            e2e = calc_latency_stats(_cols_b("e2e_delay_pwave_p95"))
+            cpu = calc_stats(_cols_b("pwave_aggregate_cpu_percent"))
+            mem = calc_stats(_cols_b("pwave_aggregate_mem_mb"))
 
             table_data_b.append([
                 mode_label, f"{i} Container",
@@ -681,8 +719,13 @@ def analyze_s4() -> None:
                 lat["p95_of_window_p95"],
                 e2e["p95_of_window_p95"],
                 cpu["mean"], mem["mean"],
-                status,
+                run_summary, status,
             ])
+
+    save_and_print_table(
+        "ANALISIS SKENARIO 4B (Skalabilitas P-Wave Detector / CPU Bound)",
+        headers_b, table_data_b, "summary_s4b_pwave.csv",
+    )
 
     save_and_print_table(
         "ANALISIS SKENARIO 4B (Skalabilitas P-Wave Detector / CPU Bound)",
