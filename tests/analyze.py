@@ -404,111 +404,105 @@ def _actual_interval(path: str) -> float:
 
 
 def analyze_s2() -> None:
+    """
+    S2: Overhead Instrumentasi Prometheus.
+
+    Perbandingan dilakukan antara dua kondisi yang apple-to-apple —
+    keduanya diukur dengan alat yang sama (Docker SDK):
+      - NoMetrics API  : baseline tanpa Prometheus
+      - WithMetrics    : dengan Prometheus aktif, diukur via _docker_api.csv
+
+    NoMetrics CLI tidak diikutsertakan karena menggunakan alat ukur berbeda
+    (docker stats CLI subprocess) sehingga tidak sebanding.
+    """
     scenarios = [
-        ("Tanpa Metrics (CLI)", "s2_overhead_no_metrics_cli", False),
-        ("Tanpa Metrics (API)", "s2_overhead_no_metrics_api", False),
-        ("Dengan Metrics (Prometheus)", "s2_overhead_with_metrics", True),
+        ("Tanpa Metrics (Baseline)",   "s2_overhead_no_metrics_api",  False),
+        ("Dengan Metrics (Prometheus)", "s2_overhead_with_metrics",    True),
     ]
     headers = [
         "Kondisi",
-        "DP CPU Mean (%)", "DP CPU P95 (%)",
-        "DP RAM Mean (MB)", "DP RAM Max (MB)",
-        "PW CPU Mean (%)", "PW CPU P95 (%)",
+        "PW CPU Mean (%)", "PW CPU Std (%)", "PW CPU P95 (%)",
         "PW RAM Mean (MB)", "PW RAM Max (MB)",
-        "Run Valid",
-        "Status",
+        "Overhead CPU vs Baseline",
+        "Run Valid", "Status",
     ]
     table_data = []
+    baseline_cpu_mean = None
 
     for label, prefix, has_prometheus in scenarios:
-        paths = _read_runs(prefix)
-
-        if not paths:
-            path = os.path.join(RESULTS_DIR, f"{prefix}_metrics.csv")
-            result = read_csv(path)
-            _warn_invalid(label, result)
-            merged = result["columns"] if (result and result["valid"]) else {}
-            status = "VALID" if (result and result["valid"]) else "INVALID"
-            run_summary = "1/1" if status == "VALID" else "0/1"
+        # Tentukan file yang dipakai per kondisi
+        if has_prometheus:
+            # WithMetrics: pakai _docker_api.csv untuk perbandingan setara
+            import glob as _glob
+            docker_api_paths = sorted(_glob.glob(
+                os.path.join(RESULTS_DIR, f"{prefix}_metrics_run*_docker_api.csv")
+            ))
+            paths = docker_api_paths if docker_api_paths else _read_runs(prefix)
         else:
-            # Untuk NoMetrics, validasi hanya berdasarkan kolom PW yang ada
-            if not has_prometheus:
-                merged_cols: dict = {}
-                n_valid = 0
-                for p in paths:
-                    # Hitung interval aktual dari data (CLI ~7s, API ~10s)
-                    actual_interval = _actual_interval(p)
-                    r = read_csv(p, interval_sec=actual_interval)
-                    run_name = os.path.basename(p)
-                    if r is not None:
-                        # Validasi ulang: cukup minimal 10 sampel PW CPU valid
-                        # (read_csv mungkin sudah mengisi kolom meski status invalid)
-                        pw_vals = r["columns"].get("pwave_aggregate_cpu_percent", [])
-                        valid_pw = [v for v in pw_vals if v is not None]
-                        if len(valid_pw) >= 10:
-                            r["valid"] = True
-                        else:
-                            r["valid"] = False
-                            r["invalid_reason"] = (
-                                f"Kurang dari 10 sampel PW CPU valid "
-                                f"({len(valid_pw)} sampel)"
-                            )
-                    _warn_invalid(f"{label}/{run_name}", r)
-                    if r and r["valid"]:
-                        n_valid += 1
-                        for col, vals in r["columns"].items():
-                            merged_cols.setdefault(col, []).extend(vals)
-                merged = merged_cols
-                status = "VALID" if n_valid > 0 else "INVALID"
-                run_summary = f"{n_valid}/{len(paths)}"
-            else:
-                # WithMetrics: gunakan _merge_run_results tapi izinkan
-                # kolom latensi histogram kosong (opsional untuk S2)
-                from collections import defaultdict as _dd
-                merged_cols2: dict = _dd(list)
-                n_valid = 0
-                for p in paths:
-                    r = read_csv(p)
-                    run_name = os.path.basename(p)
-                    if r is not None:
-                        # Override: valid jika CPU dan throughput tersedia
-                        cpu_vals = [v for v in r["columns"].get(
-                            "pwave_aggregate_cpu_percent", []) if v is not None]
-                        dp_vals  = [v for v in r["columns"].get(
-                            "dp_aggregate_cpu_percent", []) if v is not None]
-                        if len(cpu_vals) >= 10 and len(dp_vals) >= 10:
-                            r["valid"] = True
-                        # Jika sudah valid dari read_csv, biarkan
-                    _warn_invalid(f"{label}/{run_name}", r)
-                    if r and r["valid"]:
-                        n_valid += 1
-                        for col, vals in r["columns"].items():
-                            merged_cols2[col].extend(vals)
-                merged = merged_cols2
-                status = "VALID" if n_valid > 0 else "INVALID"
-                run_summary = f"{n_valid}/{len(paths)}"
+            paths = _read_runs(prefix)
+
+        merged_cols: dict = {}
+        n_valid = 0
+
+        for p in paths:
+            actual_interval = _actual_interval(p)
+            r = read_csv(p, interval_sec=actual_interval)
+            run_name = os.path.basename(p)
+            if r is not None:
+                pw_vals = [v for v in r["columns"].get(
+                    "pwave_aggregate_cpu_percent", []) if v is not None]
+                r["valid"] = len(pw_vals) >= 10
+                if not r["valid"]:
+                    r["invalid_reason"] = (
+                        f"Kurang dari 10 sampel PW CPU valid ({len(pw_vals)} sampel)"
+                    )
+            _warn_invalid(f"{label}/{run_name}", r)
+            if r and r["valid"]:
+                n_valid += 1
+                for col, vals in r["columns"].items():
+                    merged_cols.setdefault(col, []).extend(vals)
+
+        status = "VALID" if n_valid > 0 else "INVALID"
+        run_summary = f"{n_valid}/{len(paths)}"
 
         def _cols(key: str) -> list:
-            vals = merged.get(key, [])
-            return [v for v in vals if v is not None]
+            return [v for v in merged_cols.get(key, []) if v is not None]
 
-        dp_cpu = calc_stats(_cols("dp_aggregate_cpu_percent"))
-        dp_mem = calc_stats(_cols("dp_aggregate_mem_mb"))
-        pw_cpu = calc_stats(_cols("pwave_aggregate_cpu_percent"))
-        pw_mem = calc_stats(_cols("pwave_aggregate_mem_mb"))
+        cpu_vals = _cols("pwave_aggregate_cpu_percent")
+        mem_vals = _cols("pwave_aggregate_mem_mb")
+
+        if cpu_vals:
+            import numpy as _np
+            cpu_mean = round(float(_np.mean(cpu_vals)), 2)
+            cpu_std  = round(float(_np.std(cpu_vals)), 2)
+            cpu_p95  = round(float(_np.percentile(cpu_vals, 95)), 2)
+            mem_mean = round(float(_np.mean(mem_vals)), 2) if mem_vals else "N/A"
+            mem_max  = round(float(_np.max(mem_vals)), 2)  if mem_vals else "N/A"
+        else:
+            cpu_mean = cpu_std = cpu_p95 = mem_mean = mem_max = "N/A"
+
+        # Hitung overhead relatif terhadap baseline
+        if not has_prometheus:
+            baseline_cpu_mean = cpu_mean
+            overhead = "— (baseline)"
+        else:
+            if baseline_cpu_mean and baseline_cpu_mean != "N/A" and cpu_mean != "N/A":
+                delta = round(cpu_mean - baseline_cpu_mean, 2)
+                pct   = round((delta / baseline_cpu_mean) * 100, 1)
+                overhead = f"{delta:+.2f}% ({pct:+.1f}%)"
+            else:
+                overhead = "N/A"
 
         table_data.append([
             label,
-            dp_cpu["mean"], dp_cpu["p95_of_window_p95"],
-            dp_mem["mean"], dp_mem["max"],
-            pw_cpu["mean"], pw_cpu["p95_of_window_p95"],
-            pw_mem["mean"], pw_mem["max"],
-            run_summary,
-            status,
+            cpu_mean, cpu_std, cpu_p95,
+            mem_mean, mem_max,
+            overhead,
+            run_summary, status,
         ])
 
     save_and_print_table(
-        "ANALISIS SKENARIO 2 (Overhead Instrumentasi)",
+        "ANALISIS SKENARIO 2 (Overhead Instrumentasi Prometheus — Docker SDK)",
         headers, table_data, "summary_s2_overhead.csv",
     )
 
