@@ -3,13 +3,11 @@
 
 # ==============================================================================
 # Resolve Python executable yang memiliki semua dependensi yang dibutuhkan.
-# Dicek sekali saat dot-source; hasilnya disimpan di $PythonExe supaya semua
-# script langsung bisa menggunakan variabel ini tanpa hardcode path.
 # ==============================================================================
 function Resolve-PythonExe {
     $candidates = @(
-        "C:\Users\user\miniconda3\python.exe",          # AnyDesk host (Miniconda base)
-        "C:\Users\HP\AppData\Local\Programs\Python\Python312\python.exe",  # dev lokal
+        "C:\Users\user\miniconda3\python.exe",
+        "C:\Users\HP\AppData\Local\Programs\Python\Python312\python.exe",
         "python3",
         "python"
     )
@@ -19,7 +17,6 @@ function Resolve-PythonExe {
         try {
             $exePath = (Get-Command $candidate -ErrorAction Stop).Source
         } catch {
-            # Jika bukan perintah di PATH, cek langsung sebagai path file
             if (-not (Test-Path $candidate)) { continue }
             $exePath = $candidate
         }
@@ -44,10 +41,13 @@ function Resolve-PythonExe {
 $PythonExe = Resolve-PythonExe
 
 # ==============================================================================
-# Gerbang kesiapan: tunggu hingga semua target Prometheus UP dan Data Provider
-# sudah mengirim minimal 1 trace ke Kafka.
-# Bila Prometheus tidak tersedia (kondisi NoMetrics), fallback ke pengecekan
-# offset Kafka langsung.
+# Gerbang kesiapan sistem.
+# - Mode Prometheus : tunggu target UP dan data_provider rate > 0.
+# - Mode NoMetrics  : dua lapis —
+#     Lapis 1: container p_wave_detector dan data_provider harus Running.
+#     Lapis 2: offset trace_topic > 0 (data sudah mengalir).
+#   Jika setelah 2/3 timeout offset masih 0 tapi container sudah UP, lanjut
+#   saja — data_provider butuh waktu ekstra untuk connect ke SeedLink eksternal.
 # ==============================================================================
 function Wait-SystemReady {
     param(
@@ -56,20 +56,21 @@ function Wait-SystemReady {
         [int]$PollSec = 5
     )
 
-    $deadline = (Get-Date).AddSeconds($TimeoutSec)
+    $startTime = Get-Date
+    $deadline  = $startTime.AddSeconds($TimeoutSec)
     Write-Host "Menunggu sistem siap (timeout ${TimeoutSec}s)..." -ForegroundColor Yellow
 
-    # Deteksi apakah Prometheus tersedia di stack ini
+    # Deteksi apakah Prometheus tersedia
     $prometheusAvailable = $false
     try {
-        $check = Invoke-RestMethod "$PrometheusUrl/-/ready" -TimeoutSec 5 -ErrorAction Stop
+        $null = Invoke-RestMethod "$PrometheusUrl/-/ready" -TimeoutSec 5 -ErrorAction Stop
         $prometheusAvailable = $true
     } catch {}
 
     while ((Get-Date) -lt $deadline) {
 
         if ($prometheusAvailable) {
-            # --- Mode normal: cek via Prometheus ---
+            # --- Mode Prometheus ---
             try {
                 $r = Invoke-RestMethod "$PrometheusUrl/api/v1/query?query=up" -TimeoutSec 5 -ErrorAction Stop
                 $upTargets = ($r.data.result | Where-Object { $_.value[1] -eq "1" }).Count
@@ -81,42 +82,45 @@ function Wait-SystemReady {
             } catch { $dpRate = 0.0 }
 
             if ($upTargets -gt 0 -and $dpRate -gt 0) {
-                Write-Host "Sistem siap: $upTargets target UP, laju Data Provider = $([math]::Round($dpRate,2)) trace/s" -ForegroundColor Green
+                Write-Host "Sistem siap: $upTargets target UP, dp_rate=$([math]::Round($dpRate,2)) trace/s" -ForegroundColor Green
                 return $true
             }
             Write-Host "  Menunggu... UP=$upTargets, dp_rate=$([math]::Round($dpRate,3))"
 
         } else {
-            # --- Fallback NoMetrics: cek offset Kafka dari host via Python ---
-            # Lebih andal daripada docker exec karena tidak bergantung pada
-            # nama container atau tools yang tersedia di dalam image Kafka.
-            try {
-                $checkScript = @"
-from kafka import KafkaConsumer
-from kafka.structs import TopicPartition
-try:
-    c = KafkaConsumer(bootstrap_servers='localhost:9092', request_timeout_ms=5000)
-    parts = c.partitions_for_topic('trace_topic')
-    if not parts:
-        print(0)
-    else:
-        tps = [TopicPartition('trace_topic', p) for p in parts]
-        offsets = c.end_offsets(tps)
-        print(sum(offsets.values()))
-    c.close()
-except Exception as e:
-    print(0)
-"@
-                $offsetStr = & $PythonExe -c $checkScript 2>$null
-                $offset = [long]($offsetStr.Trim())
-                if ($offset -gt 0) {
-                    Write-Host "Sistem siap (NoMetrics): offset trace_topic = $offset" -ForegroundColor Green
-                    return $true
-                }
-                Write-Host "  Menunggu (NoMetrics)... offset trace_topic = $offset"
-            } catch {
-                Write-Host "  Menunggu (NoMetrics)... kafka belum siap"
+            # --- Mode NoMetrics ---
+
+            # Lapis 1: cek container Running
+            $pwaveUp = (docker ps --format "{{.Names}} {{.Status}}" 2>$null) |
+                Where-Object { $_ -match 'p_wave_detector' -and $_ -match 'Up' }
+            $dpUp = (docker ps --format "{{.Names}} {{.Status}}" 2>$null) |
+                Where-Object { $_ -match 'data_provider' -and $_ -match 'Up' }
+
+            if (-not $pwaveUp -or -not $dpUp) {
+                Write-Host "  Menunggu (NoMetrics)... container belum siap"
+                Start-Sleep $PollSec
+                continue
             }
+
+            # Lapis 2: cek offset Kafka via Python
+            $pyOneLiner = 'from kafka import KafkaConsumer; from kafka.structs import TopicPartition; c=KafkaConsumer(bootstrap_servers=["localhost:9092"],request_timeout_ms=5000); p=c.partitions_for_topic("trace_topic"); print(sum(c.end_offsets([TopicPartition("trace_topic",x) for x in p]).values()) if p else 0); c.close()'
+            $offsetStr = & $PythonExe -c $pyOneLiner 2>$null
+            $offset = 0
+            if ($offsetStr -match '^\d+$') { $offset = [long]($offsetStr.Trim()) }
+
+            if ($offset -gt 0) {
+                Write-Host "Sistem siap (NoMetrics): container UP, offset trace_topic = $offset" -ForegroundColor Green
+                return $true
+            }
+
+            # Setelah 2/3 timeout, container UP sudah cukup
+            $elapsed = ((Get-Date) - $startTime).TotalSeconds
+            if ($elapsed -gt ($TimeoutSec * 0.67)) {
+                Write-Host "Sistem siap (NoMetrics): container UP, SeedLink masih connect..." -ForegroundColor Yellow
+                return $true
+            }
+
+            Write-Host "  Menunggu (NoMetrics)... offset trace_topic = $offset (container UP)"
         }
 
         Start-Sleep $PollSec
@@ -144,7 +148,7 @@ function Save-RunMetadata {
     $composeHash = ""
     try { $composeHash = (Get-FileHash $ComposeFile -Algorithm SHA256).Hash.Substring(0,12) } catch {}
 
-    $envHash = ""
+    $envHash    = ""
     $envContent = ""
     try {
         $envHash    = (Get-FileHash ".env" -Algorithm SHA256).Hash.Substring(0,12)
@@ -153,11 +157,12 @@ function Save-RunMetadata {
 
     $kafkaTopics = ""
     try {
-        $kafkaContainer = docker ps --format "{{.Names}}" 2>$null `
-            | Where-Object { $_ -match '^kafka1$|^gempa-kafka1-1$' } `
-            | Select-Object -First 1
+        $kafkaContainer = (docker ps --format "{{.Names}}" 2>$null) |
+            Where-Object { $_ -match 'kafka1' } |
+            Select-Object -First 1
         if ($kafkaContainer) {
-            $kafkaTopics = (docker exec $kafkaContainer kafka-topics.sh --bootstrap-server localhost:9092 --describe 2>$null) -join "`n"
+            $kafkaTopics = (docker exec $kafkaContainer kafka-topics.sh `
+                --bootstrap-server localhost:9092 --describe 2>$null) -join "`n"
         }
     } catch {}
 
