@@ -667,7 +667,7 @@ def analyze_s4b() -> None:
     # --- 4B: P-Wave Detector ---
     scenarios_b = [
         ("Native Kafka",  "s4_pwave_kafka",       False, range(2, 6)),
-        ("Load Balancer", "s4_pwave_kafka_nginx",  True,  range(2, 7)),
+        ("Load Balancer", "s4_pwave_kafka_nginx",  True,  range(2, 6)),
     ]
     headers_b = [
         "Arsitektur", "Replika ML",
@@ -728,11 +728,6 @@ def analyze_s4b() -> None:
                 cpu["mean"], mem["mean"],
                 run_summary, status,
             ])
-
-    save_and_print_table(
-        "ANALISIS SKENARIO 4B (Skalabilitas P-Wave Detector / CPU Bound)",
-        headers_b, table_data_b, "summary_s4b_pwave.csv",
-    )
 
     save_and_print_table(
         "ANALISIS SKENARIO 4B (Skalabilitas P-Wave Detector / CPU Bound)",
