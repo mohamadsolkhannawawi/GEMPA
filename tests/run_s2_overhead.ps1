@@ -73,11 +73,10 @@ foreach ($s in $BaseScenarios) {
                 --dump-buckets
         }
 
-        # Throughput dari selisih offset Kafka (tersedia di semua kondisi)
+        # Kafka offset tidak diukur untuk S2 — S2 fokus pada overhead CPU/RAM
+        # instrumentasi Prometheus, bukan throughput. Kafka sedang terbebani
+        # inference ML sehingga offset query sering timeout.
         $kafkaOut = $outRun -replace '\.csv$', '_kafka_offsets.csv'
-        if (Test-Path "tests/collect_kafka_offsets.py") {
-            & $PythonExe tests/collect_kafka_offsets.py --duration $DurationSec --output $kafkaOut
-        }
 
         Copy-Results -Files @($outRun, $kafkaOut, $metaOut) -DestDir $ArchiveDir
 
