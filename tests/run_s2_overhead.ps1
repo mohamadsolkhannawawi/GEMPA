@@ -60,25 +60,32 @@ foreach ($s in $BaseScenarios) {
         Write-Host "Mengumpulkan metrik S2 ($DurationSec s) - kondisi: $($s.Name)..."
 
         if ($s.Name -eq "NoMetricsCLI") {
-            # Gunakan Telegraf sebagai alat ukur seragam (port 9273)
             & $PythonExe tests/collect_docker_stats_cli.py --duration $DurationSec --output $outRun
         } elseif ($s.Name -eq "NoMetricsAPI") {
             & $PythonExe tests/collect_docker_stats_api.py --duration $DurationSec --output $outRun
         } else {
-            # WithMetrics: Prometheus tersedia
+            # WithMetrics: jalankan Prometheus collector + Docker API collector
+            # secara paralel agar CPU/RAM bisa dibandingkan apple-to-apple
+            # dengan kondisi NoMetrics
+            $dockerOut = $outRun -replace '\.csv$', '_docker_api.csv'
+            $procDocker = Start-Process -FilePath $PythonExe `
+                -ArgumentList "tests/collect_docker_stats_api.py --duration $DurationSec --output $dockerOut" `
+                -PassThru -NoNewWindow
+
             & $PythonExe tests/collect_metrics.py `
                 --scenario s2 `
                 --duration $DurationSec `
                 --output $outRun `
                 --dump-buckets
+
+            Wait-Process -InputObject $procDocker -Timeout ($DurationSec + 30) -ErrorAction SilentlyContinue
+            Write-Host "Data Docker API (pembanding native) disimpan ke $dockerOut"
         }
 
-        # Kafka offset tidak diukur untuk S2 — S2 fokus pada overhead CPU/RAM
-        # instrumentasi Prometheus, bukan throughput. Kafka sedang terbebani
-        # inference ML sehingga offset query sering timeout.
-        $kafkaOut = $outRun -replace '\.csv$', '_kafka_offsets.csv'
+        $kafkaOut  = $outRun -replace '\.csv$', '_kafka_offsets.csv'
+        $dockerOut = $outRun -replace '\.csv$', '_docker_api.csv'
 
-        Copy-Results -Files @($outRun, $kafkaOut, $metaOut) -DestDir $ArchiveDir
+        Copy-Results -Files @($outRun, $kafkaOut, $metaOut, $dockerOut) -DestDir $ArchiveDir
 
         docker compose -f $($s.File) down -v --remove-orphans
 
