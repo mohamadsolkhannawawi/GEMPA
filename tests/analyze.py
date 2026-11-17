@@ -415,7 +415,8 @@ def analyze_s2() -> None:
                 merged_cols: dict = {}
                 n_valid = 0
                 for p in paths:
-                    r = read_csv(p)
+                    # NoMetrics interval ~7-8s (docker stats lebih lambat dari Prometheus)
+                    r = read_csv(p, interval_sec=8.0)
                     run_name = os.path.basename(p)
                     if r is not None:
                         # Override validasi: cukup punya kolom pwave
