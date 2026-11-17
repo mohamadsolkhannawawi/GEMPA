@@ -1,0 +1,3 @@
+Arsitektur Broker,E2E P-Wave Mean (ms),E2E P-Wave P95 (ms),Kafka Delay P95 (ms),Queue Wait P95 (ms),Inferensi P95 (ms),Laju Deteksi (det/s),Inflight Mean,CPU Mean (%),RAM Mean (MB),Run Valid,Status
+Kafka Native,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,0/1,INVALID
+Kafka + NGINX,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,0/1,INVALID
