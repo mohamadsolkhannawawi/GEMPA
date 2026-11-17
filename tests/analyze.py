@@ -153,16 +153,7 @@ def read_csv(
             "n_rows_window": n_rows_window,
         }
 
-    # --- Simpan clean CSV ---
-    if rows:
-        dir_name = os.path.dirname(path)
-        base_name = os.path.basename(path)
-        clean_path = os.path.join(dir_name, f"clean_{base_name}")
-        with open(clean_path, mode="w", newline="", encoding="utf-8") as fc:
-            fieldnames = list(rows[0].keys())
-            writer = csv.DictWriter(fc, fieldnames=fieldnames)
-            writer.writeheader()
-            writer.writerows(rows)
+    # clean CSV tidak disimpan — file ini tidak dipakai dan mengotori folder results
 
     return {
         "columns": columns,
