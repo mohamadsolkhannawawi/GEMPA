@@ -168,6 +168,9 @@ services:
       - "8004"
     deploy:
       replicas: 3
+      resources:
+        limits:
+          memory: ${PWAVE_MEM_LIMIT:-4g}
     tty: true
     env_file:
       - .env

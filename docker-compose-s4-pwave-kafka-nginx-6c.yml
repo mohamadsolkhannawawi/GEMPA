@@ -168,6 +168,9 @@ services:
       - "8004"
     deploy:
       replicas: 6
+      resources:
+        limits:
+          memory: ${PWAVE_MEM_LIMIT:-4g}
     tty: true
     env_file:
       - .env
@@ -209,7 +212,7 @@ services:
       context: .
       dockerfile: data_archiver/Dockerfile
     deploy:
-      replicas: 1
+      replicas: 5
     volumes:
       - ./data_archiver/data_archive:/mnt/data
     tty: true
