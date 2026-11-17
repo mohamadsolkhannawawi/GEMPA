@@ -1,7 +1,7 @@
 # run_s3_broker.ps1 - Skenario S3: Kafka Native vs Kafka + NGINX
 param (
     [int]$DurationSec    = 300,
-    [int]$Repeat         = 3,
+    [int]$Repeat         = 1,
     [switch]$Shuffle,
     [string]$ScenarioName = "All"
 )

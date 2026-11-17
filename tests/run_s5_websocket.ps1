@@ -1,7 +1,7 @@
 # run_s5_websocket.ps1 - Skenario S5: FastAPI vs Express.js WebSocket
 param (
     [int]$DurationSec    = 300,
-    [int]$Repeat         = 3,
+    [int]$Repeat         = 1,
     [switch]$Shuffle,
     [string]$ScenarioName = "All"
 )

@@ -3,7 +3,7 @@
 # yang seragam. Throughput diukur dari offset Kafka via collect_kafka_offsets.py.
 param (
     [int]$DurationSec    = 300,
-    [int]$Repeat         = 3,
+    [int]$Repeat         = 1,
     [switch]$Shuffle,
     [string]$ScenarioName = "All"
 )

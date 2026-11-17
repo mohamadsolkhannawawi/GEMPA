@@ -1,7 +1,7 @@
 # run_s4_scalability_archiver.ps1 - Skenario S4A: Skalabilitas Data Archiver
 param (
     [int]$DurationSec    = 300,
-    [int]$Repeat         = 3,
+    [int]$Repeat         = 1,
     [switch]$Shuffle,
     [string]$ScenarioName = "All"
 )
