@@ -127,7 +127,11 @@ class TraceConsumer:
         trace.stats.numsamples = data['num_samples']
         trace.stats.samplecnt = data['sample_cnt']
         trace.stats.sampletype = data['sample_type']
-        trace.interpolate(sampling_rate=20)
+        # Guard: hanya interpolasi jika sampling_rate valid dan data tidak semua nol.
+        # Trace dengan sampling_rate == 0 atau data flat-nol menyebabkan divide-by-zero
+        # di obspy interpolation dan menghasilkan NaN/Inf yang meledakkan alokasi TF.
+        if data['sampling_rate'] > 0 and not np.all(trace.data == 0):
+            trace.interpolate(sampling_rate=20)
         return trace
 
     def predict(
@@ -147,6 +151,17 @@ class TraceConsumer:
                            (digunakan untuk mengukur pwave_queue_wait_seconds)
         """
         try:
+            # --- Guard: buang trace yang mengandung NaN atau Inf ---
+            # Trace demikian dihasilkan dari data seismik degenerasi (semua nol,
+            # sampling_rate tidak valid, dsb.) dan akan menyebabkan sliding_window_view
+            # menghasilkan tensor berisi NaN yang membebani alokasi TensorFlow.
+            if not np.isfinite(trace.data).all():
+                logger.debug(
+                    f"Trace {trace.stats.station}-{trace.stats.channel} "
+                    f"mengandung NaN/Inf, dilewati."
+                )
+                return
+
             # --- Siapkan input model (vektorisasi, tanpa apply_along_axis) ---
             converter_np = np.stack([trace.data, trace.data, trace.data], axis=-1)
             sliding_array = np.lib.stride_tricks.sliding_window_view(

@@ -139,7 +139,9 @@ def set_trace(data: Dict[str, Any]) -> obspy.Trace:
         'samplecnt': data['sample_cnt'],
         'sampletype': data['sample_type'],
     })
-    trace.interpolate(sampling_rate=20)
+    # Guard: hanya interpolasi jika sampling_rate valid dan data tidak semua nol.
+    if data['sampling_rate'] > 0 and not np.all(trace.data == 0):
+        trace.interpolate(sampling_rate=20)
     return trace
 
 
@@ -156,6 +158,14 @@ async def predict(
     arrive_time : timestamp saat permintaan HTTP diterima endpoint /trace
     """
     try:
+        # --- Guard: buang trace yang mengandung NaN atau Inf ---
+        if not np.isfinite(trace.data).all():
+            logger.debug(
+                f"Trace {trace.stats.station}-{trace.stats.channel} "
+                f"mengandung NaN/Inf, dilewati."
+            )
+            return
+
         # --- Siapkan input model ---
         converter_np = np.stack([trace.data, trace.data, trace.data], axis=-1)
         sliding_array = np.lib.stride_tricks.sliding_window_view(
