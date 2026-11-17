@@ -1,4 +1,4 @@
-# run_s2_overhead.ps1 — Skenario S2: Overhead Instrumentasi Prometheus
+# run_s2_overhead.ps1 - Skenario S2: Overhead Instrumentasi Prometheus
 # Ketiga kondisi diukur dengan Telegraf (/metrics di :9273) sebagai alat ukur
 # yang seragam. Throughput diukur dari offset Kafka via collect_kafka_offsets.py.
 param (
@@ -58,7 +58,7 @@ foreach ($s in $BaseScenarios) {
         $metaOut = $outRun -replace '\.csv$', '_meta.json'
         Save-RunMetadata -OutputPath $metaOut -ComposeFile $s.File -ScenarioName $s.Name -RunIndex $run
 
-        Write-Host "Mengumpulkan metrik S2 ($DurationSec s) — kondisi: $($s.Name)..."
+        Write-Host "Mengumpulkan metrik S2 ($DurationSec s) - kondisi: $($s.Name)..."
 
         if ($s.Name -eq "NoMetricsCLI") {
             # Gunakan Telegraf sebagai alat ukur seragam (port 9273)
