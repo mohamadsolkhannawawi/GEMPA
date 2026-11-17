@@ -1,0 +1,10 @@
+﻿{
+    "env_hash":  "7F563A08B81F",
+    "run_index":  1,
+    "timestamp":  "2026-11-17T12:46:17Z",
+    "compose_file":  "docker-compose-s2-with_metrics.yml",
+    "compose_hash":  "C0EF8DAC0B6B",
+    "git_commit":  "57d8310",
+    "kafka_describe":  "",
+    "scenario":  "WithMetrics"
+}
