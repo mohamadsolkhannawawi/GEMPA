@@ -53,11 +53,19 @@ function Wait-SystemReady {
     param(
         [string]$PrometheusUrl = "http://localhost:9090",
         [int]$TimeoutSec = 300,
-        [int]$PollSec = 5
+        [int]$PollSec = 5,
+        # Bila $true, lolos jika target UP cukup meski dp_rate masih 0
+        # (berguna untuk S5 yang data_provider butuh waktu connect SeedLink)
+        [switch]$RelaxDpRate
     )
 
-    $startTime = Get-Date
-    $deadline  = $startTime.AddSeconds($TimeoutSec)
+    $startTime    = Get-Date
+    $deadline     = $startTime.AddSeconds($TimeoutSec)
+    # Waktu pertama kali target UP mencapai threshold (untuk RelaxDpRate)
+    $upSince      = $null
+    $upThreshold  = 10   # minimal target UP agar dianggap "cukup naik"
+    $upStableSec  = 60   # harus stabil selama ini sebelum lanjut tanpa dp_rate
+
     Write-Host "Menunggu sistem siap (timeout ${TimeoutSec}s)..." -ForegroundColor Yellow
 
     # Deteksi apakah Prometheus tersedia
@@ -81,11 +89,25 @@ function Wait-SystemReady {
                 $dpRate = [double]($r2.data.result[0].value[1])
             } catch { $dpRate = 0.0 }
 
+            # Kondisi siap penuh: ada target UP dan data sudah mengalir
             if ($upTargets -gt 0 -and $dpRate -gt 0) {
                 Write-Host "Sistem siap: $upTargets target UP, dp_rate=$([math]::Round($dpRate,2)) trace/s" -ForegroundColor Green
                 return $true
             }
-            Write-Host "  Menunggu... UP=$upTargets, dp_rate=$([math]::Round($dpRate,3))"
+
+            # Kondisi relax: target UP cukup, dp_rate belum ada tapi sudah stabil cukup lama
+            if ($RelaxDpRate -and $upTargets -ge $upThreshold) {
+                if ($null -eq $upSince) { $upSince = Get-Date }
+                $upDuration = ((Get-Date) - $upSince).TotalSeconds
+                if ($upDuration -ge $upStableSec) {
+                    Write-Host "Sistem siap (relax): $upTargets target UP selama $([math]::Round($upDuration))s, dp_rate masih 0 (SeedLink belum konek)" -ForegroundColor Yellow
+                    return $true
+                }
+                Write-Host "  Menunggu... UP=$upTargets, dp_rate=$([math]::Round($dpRate,3)) (stabil $([math]::Round($upDuration))s / ${upStableSec}s)"
+            } else {
+                if ($upTargets -lt $upThreshold) { $upSince = $null }
+                Write-Host "  Menunggu... UP=$upTargets, dp_rate=$([math]::Round($dpRate,3))"
+            }
 
         } else {
             # --- Mode NoMetrics ---
