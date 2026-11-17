@@ -1,4 +1,4 @@
 Kondisi,DP CPU Mean (%),DP CPU P95 (%),DP RAM Mean (MB),DP RAM Max (MB),PW CPU Mean (%),PW CPU P95 (%),PW RAM Mean (MB),PW RAM Max (MB),Run Valid,Status
-Tanpa Metrics (CLI),N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,0/1,INVALID
-Tanpa Metrics (API),N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,0/1,INVALID
-Dengan Metrics (Prometheus),N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,0/1,INVALID
+Tanpa Metrics (CLI),N/A,N/A,N/A,N/A,579.54,777.17,8737.41,12278.78,1/1,VALID
+Tanpa Metrics (API),N/A,N/A,N/A,N/A,510.76,706.24,9289.94,12202.91,1/1,VALID
+Dengan Metrics (Prometheus),78.2,92.74,82.6,89.44,503.25,761.68,9090.35,12284.77,1/2,VALID
