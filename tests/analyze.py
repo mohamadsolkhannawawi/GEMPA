@@ -384,9 +384,9 @@ def analyze_s1() -> None:
 
 def analyze_s2() -> None:
     scenarios = [
-        ("Tanpa Metrics (CLI)", "s2_overhead_no_metrics_cli"),
-        ("Tanpa Metrics (API)", "s2_overhead_no_metrics_api"),
-        ("Dengan Metrics (Prometheus)", "s2_overhead_with_metrics"),
+        ("Tanpa Metrics (CLI)", "s2_overhead_no_metrics_cli", False),
+        ("Tanpa Metrics (API)", "s2_overhead_no_metrics_api", False),
+        ("Dengan Metrics (Prometheus)", "s2_overhead_with_metrics", True),
     ]
     headers = [
         "Kondisi",
@@ -399,7 +399,7 @@ def analyze_s2() -> None:
     ]
     table_data = []
 
-    for label, prefix in scenarios:
+    for label, prefix, has_prometheus in scenarios:
         paths = _read_runs(prefix)
 
         if not paths:
@@ -410,8 +410,31 @@ def analyze_s2() -> None:
             status = "VALID" if (result and result["valid"]) else "INVALID"
             run_summary = "1/1" if status == "VALID" else "0/1"
         else:
-            merged, status, n_valid, n_total = _merge_run_results(paths, label)
-            run_summary = f"{n_valid}/{n_total}"
+            # Untuk NoMetrics, validasi hanya berdasarkan kolom PW yang ada
+            if not has_prometheus:
+                merged_cols: dict = {}
+                n_valid = 0
+                for p in paths:
+                    r = read_csv(p)
+                    run_name = os.path.basename(p)
+                    if r is not None:
+                        # Override validasi: cukup punya kolom pwave
+                        pw_vals = r["columns"].get("pwave_aggregate_cpu_percent", [])
+                        valid_pw = [v for v in pw_vals if v is not None]
+                        r["valid"] = len(valid_pw) >= 10
+                        if not r["valid"]:
+                            r["invalid_reason"] = f"Kurang dari 10 sampel PW CPU valid ({len(valid_pw)} sampel)"
+                    _warn_invalid(f"{label}/{run_name}", r)
+                    if r and r["valid"]:
+                        n_valid += 1
+                        for col, vals in r["columns"].items():
+                            merged_cols.setdefault(col, []).extend(vals)
+                merged = merged_cols
+                status = "VALID" if n_valid > 0 else "INVALID"
+                run_summary = f"{n_valid}/{len(paths)}"
+            else:
+                merged, status, n_valid, n_total = _merge_run_results(paths, label)
+                run_summary = f"{n_valid}/{n_total}"
 
         def _cols(key: str) -> list:
             vals = merged.get(key, [])
