@@ -148,6 +148,24 @@ services:
       - p_wave_detector_load_balance
     restart: always
 
+  kafka-init:
+    image: confluentinc/cp-kafka:7.7.1
+    depends_on:
+      - kafka1
+      - kafka2
+      - kafka3
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "Waiting for Kafka brokers..."
+        cub kafka-ready -b kafka1:9092 3 60 && \
+        kafka-topics --bootstrap-server kafka1:9092 --create --if-not-exists --topic trace_topic           --partitions 5 --replication-factor 2 && \
+        kafka-topics --bootstrap-server kafka1:9092 --create --if-not-exists --topic p_wave_topic         --partitions 5 --replication-factor 1 && \
+        kafka-topics --bootstrap-server kafka1:9092 --create --if-not-exists --topic loc_mag_topic        --partitions 3 --replication-factor 1 && \
+        kafka-topics --bootstrap-server kafka1:9092 --create --if-not-exists --topic result_loc_mag_topic --partitions 3 --replication-factor 1 && \
+        echo "All topics initialized." || echo "kafka-init failed."
+    restart: "no"
+
   data_provider:
     container_name: data_provider
     build:
