@@ -643,7 +643,6 @@ def analyze_all() -> None:
 
 
 if __name__ == "__main__":
-    global WARMUP_SEC, WINDOW_SEC
     parser = argparse.ArgumentParser(description="EEWS Test Result Analyzer")
     parser.add_argument(
         "--scenario",
