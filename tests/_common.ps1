@@ -8,7 +8,8 @@
 # ==============================================================================
 function Resolve-PythonExe {
     $candidates = @(
-        "C:\Users\HP\AppData\Local\Programs\Python\Python312\python.exe",
+        "C:\Users\user\miniconda3\python.exe",          # AnyDesk host (Miniconda base)
+        "C:\Users\HP\AppData\Local\Programs\Python\Python312\python.exe",  # dev lokal
         "python3",
         "python"
     )
