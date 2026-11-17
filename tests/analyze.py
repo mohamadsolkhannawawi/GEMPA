@@ -646,9 +646,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="EEWS Test Result Analyzer")
     parser.add_argument(
         "--scenario",
-        choices=["1", "2", "3", "4", "5", "all"],
+        choices=["1", "2", "3", "4", "5", "all", "s1", "s2", "s3", "s4_archiver", "s4_pwave", "s5", "final"],
         default="all",
-        help="Skenario yang dianalisis",
+        help="Skenario yang dianalisis (1/s1, 2/s2, 3/s3, 4/s4_archiver/s4_pwave, 5/s5, all)",
     )
     parser.add_argument(
         "--warmup-sec",
@@ -668,15 +668,15 @@ if __name__ == "__main__":
     WARMUP_SEC = args.warmup_sec
     WINDOW_SEC = args.window_sec
 
-    if args.scenario == "1":
+    if args.scenario in ("1", "s1"):
         analyze_s1()
-    elif args.scenario == "2":
+    elif args.scenario in ("2", "s2"):
         analyze_s2()
-    elif args.scenario == "3":
+    elif args.scenario in ("3", "s3"):
         analyze_s3()
-    elif args.scenario == "4":
+    elif args.scenario in ("4", "s4_archiver", "s4_pwave"):
         analyze_s4()
-    elif args.scenario == "5":
+    elif args.scenario in ("5", "s5"):
         analyze_s5()
-    else:
+    elif args.scenario in ("all", "final"):
         analyze_all()
