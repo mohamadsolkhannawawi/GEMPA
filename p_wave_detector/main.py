@@ -95,6 +95,12 @@ else:
     PWAVE_E2E_LATENCY = None
 
 
+# Batasi jumlah thread inferensi paralel untuk mencegah ledakan alokasi memori TensorFlow.
+# Setiap inference call dapat mengalokasikan >1 GB; 4 thread paralel aman di mesin 32 GB WSL.
+_MAX_INFLIGHT_INFERENCES = int(os.getenv("PWAVE_MAX_INFLIGHT", "4"))
+_inference_semaphore = threading.Semaphore(_MAX_INFLIGHT_INFERENCES)
+
+
 class TraceConsumer:
     """Kafka consumer yang mendeteksi P-wave pada setiap trace seismik masuk."""
 
@@ -168,7 +174,14 @@ class TraceConsumer:
                 PWAVE_E2E_LATENCY.observe(time() - data_provider_time)
 
             # --- Deteksi menggunakan logika bersama dari pwave_common ---
-            preds_flat = predictions_p_wave[:, 1] if predictions_p_wave.ndim > 1 else predictions_p_wave.flatten()
+            # Tangani dua kemungkinan shape output model:
+            # - (N, 2): softmax 2-kelas → ambil kolom 1 (probabilitas P-wave)
+            # - (N, 1): sigmoid 1-output → squeeze langsung
+            # - (N,)  : sudah flat
+            if predictions_p_wave.ndim > 1 and predictions_p_wave.shape[1] >= 2:
+                preds_flat = predictions_p_wave[:, 1]
+            else:
+                preds_flat = predictions_p_wave.flatten()
             idx, max_value = detect(preds_flat, PWAVE_THRESHOLD, PWAVE_CONSEC)
 
             if max_value == 0.0:
@@ -303,6 +316,8 @@ class TraceConsumer:
 
         Menerima salinan data yang sudah mandiri (tidak berbagi referensi list
         dengan cache), sehingga aman dijalankan paralel.
+        Semaphore _inference_semaphore membatasi jumlah inferensi aktif sekaligus
+        untuk mencegah lonjakan alokasi memori TensorFlow.
         """
         if ENABLE_METRICS and PWAVE_INFLIGHT:
             PWAVE_INFLIGHT.inc()
@@ -312,8 +327,12 @@ class TraceConsumer:
             new_length = int(len(worker_data['data']) / ratio)
 
             if new_length >= 160:
-                trace = self.setTrace(worker_data)
-                self.predict(trace, worker_data['data_provider_time'], arrive_time)
+                _inference_semaphore.acquire()
+                try:
+                    trace = self.setTrace(worker_data)
+                    self.predict(trace, worker_data['data_provider_time'], arrive_time)
+                finally:
+                    _inference_semaphore.release()
 
             logger.debug(
                 f"Delay Kafka: {data_delay:.4f}s"

@@ -183,11 +183,14 @@ async def predict(
             PWAVE_E2E_LATENCY.observe(time() - data_provider_time)
 
         # --- Deteksi menggunakan logika bersama dari pwave_common ---
-        preds_flat = (
-            predictions_p_wave[:, 1]
-            if predictions_p_wave.ndim > 1
-            else predictions_p_wave.flatten()
-        )
+        # Tangani dua kemungkinan shape output model:
+        # - (N, 2): softmax 2-kelas → ambil kolom 1 (probabilitas P-wave)
+        # - (N, 1): sigmoid 1-output → squeeze langsung
+        # - (N,)  : sudah flat
+        if predictions_p_wave.ndim > 1 and predictions_p_wave.shape[1] >= 2:
+            preds_flat = predictions_p_wave[:, 1]
+        else:
+            preds_flat = predictions_p_wave.flatten()
         idx, max_value = detect(preds_flat, PWAVE_THRESHOLD, PWAVE_CONSEC)
 
         if max_value == 0.0:
