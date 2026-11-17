@@ -1,4 +1,4 @@
-# _common.ps1 — Fungsi-fungsi bersama untuk seluruh skrip pengujian EEWS.
+# _common.ps1 - Fungsi-fungsi bersama untuk seluruh skrip pengujian EEWS.
 # Disertakan (dot-source) oleh run_s*.ps1.
 
 # ==============================================================================
@@ -47,10 +47,17 @@ function Wait-SystemReady {
         } else {
             # --- Fallback NoMetrics: cek offset Kafka langsung ---
             try {
-                $offset = docker exec kafka1 kafka-run-class.sh kafka.tools.GetOffsetShell `
-                    --broker-list kafka1:9092 --topic trace_topic --time -1 2>$null `
-                    | ForEach-Object { ($_ -split ':')[2] } `
-                    | Measure-Object -Sum | Select-Object -ExpandProperty Sum
+                $rawLines = docker exec gempa-kafka1-1 kafka-run-class.sh kafka.tools.GetOffsetShell `
+                    --broker-list localhost:9092 --topic trace_topic --time -1 2>$null
+                $offset = $rawLines `
+                    | ForEach-Object {
+                        $parts = $_ -split ':'
+                        if ($parts.Count -ge 3) { [long]$parts[2] }
+                      } `
+                    | Where-Object { $_ -ne $null } `
+                    | Measure-Object -Sum -ErrorAction SilentlyContinue `
+                    | Select-Object -ExpandProperty Sum
+                if ($null -eq $offset) { $offset = 0 }
                 if ($offset -gt 0) {
                     Write-Host "Sistem siap (NoMetrics): offset trace_topic = $offset" -ForegroundColor Green
                     return $true
