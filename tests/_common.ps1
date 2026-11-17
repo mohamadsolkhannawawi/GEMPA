@@ -89,8 +89,20 @@ function Wait-SystemReady {
         } else {
             # --- Fallback NoMetrics: cek offset Kafka langsung ---
             try {
-                $rawLines = docker exec gempa-kafka1-1 kafka-run-class.sh kafka.tools.GetOffsetShell `
-                    --broker-list localhost:9092 --topic trace_topic --time -1 2>$null
+                # Deteksi nama container kafka yang aktif (bisa kafka1 atau gempa-kafka1-1)
+                $kafkaContainer = docker ps --format "{{.Names}}" 2>$null `
+                    | Where-Object { $_ -match '^kafka1$|^gempa-kafka1-1$' } `
+                    | Select-Object -First 1
+                if (-not $kafkaContainer) {
+                    Write-Host "  Menunggu (NoMetrics)... kafka belum siap"
+                    Start-Sleep $PollSec
+                    continue
+                }
+
+                # kafka-get-offsets.sh (Kafka 3.x / Confluent 7.x)
+                $rawLines = docker exec $kafkaContainer kafka-get-offsets.sh `
+                    --bootstrap-server localhost:9092 --topic trace_topic `
+                    --time latest 2>$null
                 $offset = $rawLines `
                     | ForEach-Object {
                         $parts = $_ -split ':'
@@ -144,7 +156,12 @@ function Save-RunMetadata {
 
     $kafkaTopics = ""
     try {
-        $kafkaTopics = (docker exec gempa-kafka1-1 kafka-topics.sh --bootstrap-server localhost:9092 --describe 2>$null) -join "`n"
+        $kafkaContainer = docker ps --format "{{.Names}}" 2>$null `
+            | Where-Object { $_ -match '^kafka1$|^gempa-kafka1-1$' } `
+            | Select-Object -First 1
+        if ($kafkaContainer) {
+            $kafkaTopics = (docker exec $kafkaContainer kafka-topics.sh --bootstrap-server localhost:9092 --describe 2>$null) -join "`n"
+        }
     } catch {}
 
     $meta = @{
