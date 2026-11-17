@@ -87,31 +87,28 @@ function Wait-SystemReady {
             Write-Host "  Menunggu... UP=$upTargets, dp_rate=$([math]::Round($dpRate,3))"
 
         } else {
-            # --- Fallback NoMetrics: cek offset Kafka langsung ---
+            # --- Fallback NoMetrics: cek offset Kafka dari host via Python ---
+            # Lebih andal daripada docker exec karena tidak bergantung pada
+            # nama container atau tools yang tersedia di dalam image Kafka.
             try {
-                # Deteksi nama container kafka yang aktif (bisa kafka1 atau gempa-kafka1-1)
-                $kafkaContainer = docker ps --format "{{.Names}}" 2>$null `
-                    | Where-Object { $_ -match '^kafka1$|^gempa-kafka1-1$' } `
-                    | Select-Object -First 1
-                if (-not $kafkaContainer) {
-                    Write-Host "  Menunggu (NoMetrics)... kafka belum siap"
-                    Start-Sleep $PollSec
-                    continue
-                }
-
-                # kafka-get-offsets.sh (Kafka 3.x / Confluent 7.x)
-                $rawLines = docker exec $kafkaContainer kafka-get-offsets.sh `
-                    --bootstrap-server localhost:9092 --topic trace_topic `
-                    --time latest 2>$null
-                $offset = $rawLines `
-                    | ForEach-Object {
-                        $parts = $_ -split ':'
-                        if ($parts.Count -ge 3) { [long]$parts[2] }
-                      } `
-                    | Where-Object { $_ -ne $null } `
-                    | Measure-Object -Sum -ErrorAction SilentlyContinue `
-                    | Select-Object -ExpandProperty Sum
-                if ($null -eq $offset) { $offset = 0 }
+                $checkScript = @"
+from kafka import KafkaConsumer
+from kafka.structs import TopicPartition
+try:
+    c = KafkaConsumer(bootstrap_servers='localhost:9092', request_timeout_ms=5000)
+    parts = c.partitions_for_topic('trace_topic')
+    if not parts:
+        print(0)
+    else:
+        tps = [TopicPartition('trace_topic', p) for p in parts]
+        offsets = c.end_offsets(tps)
+        print(sum(offsets.values()))
+    c.close()
+except Exception as e:
+    print(0)
+"@
+                $offsetStr = & $PythonExe -c $checkScript 2>$null
+                $offset = [long]($offsetStr.Trim())
                 if ($offset -gt 0) {
                     Write-Host "Sistem siap (NoMetrics): offset trace_topic = $offset" -ForegroundColor Green
                     return $true
