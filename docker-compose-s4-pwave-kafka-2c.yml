@@ -159,10 +159,12 @@ services:
       replicas: 2
       resources:
         limits:
-          memory: 4g
+          memory: 6g
     tty: true
     env_file:
       - .env
+    environment:
+      PWAVE_MAX_INFLIGHT: "3"
     depends_on:
       - kafka1
     restart: always
