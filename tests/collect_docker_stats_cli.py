@@ -58,7 +58,9 @@ def main():
     parser.add_argument("--output", type=str, required=True, help="Output CSV path")
     args = parser.parse_args()
 
-    os.makedirs(os.path.dirname(args.output), exist_ok=True)
+    output_dir = os.path.dirname(args.output)
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
     headers = ["timestamp", "pwave_aggregate_cpu_percent", "pwave_aggregate_mem_mb"]
     
     start_time = time.time()

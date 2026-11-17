@@ -394,21 +394,33 @@ def analyze_s2() -> None:
         "DP RAM Mean (MB)", "DP RAM Max (MB)",
         "PW CPU Mean (%)", "PW CPU P95 (%)",
         "PW RAM Mean (MB)", "PW RAM Max (MB)",
+        "Run Valid",
         "Status",
     ]
     table_data = []
 
     for label, prefix in scenarios:
-        path = os.path.join(RESULTS_DIR, f"{prefix}_metrics.csv")
-        result = read_csv(path)
-        _warn_invalid(label, result)
+        paths = _read_runs(prefix)
 
-        status = "VALID" if (result and result["valid"]) else "INVALID"
+        if not paths:
+            path = os.path.join(RESULTS_DIR, f"{prefix}_metrics.csv")
+            result = read_csv(path)
+            _warn_invalid(label, result)
+            merged = result["columns"] if (result and result["valid"]) else {}
+            status = "VALID" if (result and result["valid"]) else "INVALID"
+            run_summary = "1/1" if status == "VALID" else "0/1"
+        else:
+            merged, status, n_valid, n_total = _merge_run_results(paths, label)
+            run_summary = f"{n_valid}/{n_total}"
 
-        dp_cpu = calc_stats(_get_cols(result, "dp_aggregate_cpu_percent"))
-        dp_mem = calc_stats(_get_cols(result, "dp_aggregate_mem_mb"))
-        pw_cpu = calc_stats(_get_cols(result, "pwave_aggregate_cpu_percent"))
-        pw_mem = calc_stats(_get_cols(result, "pwave_aggregate_mem_mb"))
+        def _cols(key: str) -> list:
+            vals = merged.get(key, [])
+            return [v for v in vals if v is not None]
+
+        dp_cpu = calc_stats(_cols("dp_aggregate_cpu_percent"))
+        dp_mem = calc_stats(_cols("dp_aggregate_mem_mb"))
+        pw_cpu = calc_stats(_cols("pwave_aggregate_cpu_percent"))
+        pw_mem = calc_stats(_cols("pwave_aggregate_mem_mb"))
 
         table_data.append([
             label,
@@ -416,6 +428,7 @@ def analyze_s2() -> None:
             dp_mem["mean"], dp_mem["max"],
             pw_cpu["mean"], pw_cpu["p95_of_window_p95"],
             pw_mem["mean"], pw_mem["max"],
+            run_summary,
             status,
         ])
 
@@ -434,30 +447,37 @@ def analyze_s3() -> None:
         "Laju Deteksi (det/s)",
         "Inflight Mean",
         "CPU Mean (%)", "RAM Mean (MB)",
+        "Run Valid",
         "Status",
     ]
     table_data = []
 
     for mode_label, prefix in [("Kafka Native", "s3_broker_kafka"), ("Kafka + NGINX", "s3_broker_nginx")]:
-        path = os.path.join(RESULTS_DIR, f"{prefix}_metrics.csv")
-        result = read_csv(path)
-        _warn_invalid(mode_label, result)
+        paths = _read_runs(prefix)
 
-        status = "VALID" if (result and result["valid"]) else "INVALID"
+        if not paths:
+            path = os.path.join(RESULTS_DIR, f"{prefix}_metrics.csv")
+            result = read_csv(path)
+            _warn_invalid(mode_label, result)
+            merged = result["columns"] if (result and result["valid"]) else {}
+            status = "VALID" if (result and result["valid"]) else "INVALID"
+            run_summary = "1/1" if status == "VALID" else "0/1"
+        else:
+            merged, status, n_valid, n_total = _merge_run_results(paths, mode_label)
+            run_summary = f"{n_valid}/{n_total}"
 
-        e2e  = calc_latency_stats(_get_cols(result, "e2e_delay_pwave_p95"))
-        kd   = calc_latency_stats(_get_cols(result, "pwave_kafka_delay_p95") or
-                                   _get_cols(result, "pwave_lb_kafka_delay_p95"))
-        qw   = calc_latency_stats(_get_cols(result, "pwave_queue_wait_p95") or
-                                   _get_cols(result, "pwave_lb_queue_wait_p95"))
-        lat  = calc_latency_stats(_get_cols(result, "pwave_inference_latency_p95") or
-                                   _get_cols(result, "pwave_lb_inference_latency_p95"))
-        det  = calc_stats(_get_cols(result, "pwave_detection_rate") or
-                           _get_cols(result, "pwave_lb_detection_rate"))
-        inf  = calc_stats(_get_cols(result, "pwave_inflight") or
-                           _get_cols(result, "pwave_lb_inflight"))
-        cpu  = calc_stats(_get_cols(result, "pwave_aggregate_cpu_percent"))
-        mem  = calc_stats(_get_cols(result, "pwave_aggregate_mem_mb"))
+        def _cols(key: str) -> list:
+            vals = merged.get(key, [])
+            return [v for v in vals if v is not None]
+
+        e2e  = calc_latency_stats(_cols("e2e_delay_pwave_p95"))
+        kd   = calc_latency_stats(_cols("pwave_kafka_delay_p95") or _cols("pwave_lb_kafka_delay_p95"))
+        qw   = calc_latency_stats(_cols("pwave_queue_wait_p95") or _cols("pwave_lb_queue_wait_p95"))
+        lat  = calc_latency_stats(_cols("pwave_inference_latency_p95") or _cols("pwave_lb_inference_latency_p95"))
+        det  = calc_stats(_cols("pwave_detection_rate") or _cols("pwave_lb_detection_rate"))
+        inf  = calc_stats(_cols("pwave_inflight") or _cols("pwave_lb_inflight"))
+        cpu  = calc_stats(_cols("pwave_aggregate_cpu_percent"))
+        mem  = calc_stats(_cols("pwave_aggregate_mem_mb"))
 
         table_data.append([
             mode_label,
@@ -466,6 +486,7 @@ def analyze_s3() -> None:
             lat["p95_of_window_p95"],
             det["mean"], inf["mean"],
             cpu["mean"], mem["mean"],
+            run_summary,
             status,
         ])
 
@@ -644,6 +665,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # Override global jendela bila diberikan lewat argumen
+    global WARMUP_SEC, WINDOW_SEC
     WARMUP_SEC = args.warmup_sec
     WINDOW_SEC = args.window_sec
 

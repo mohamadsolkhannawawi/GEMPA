@@ -10,13 +10,15 @@ lalu hitung (offset_akhir - offset_awal) / interval_detik = pesan/detik.
 Tidak memerlukan Prometheus — hanya membutuhkan akses TCP ke broker Kafka.
 """
 
+from __future__ import annotations
+
 import argparse
 import csv
 import os
 import time
-from typing import Dict
+from typing import Dict, List
 
-from kafka import KafkaAdminClient
+from kafka import KafkaConsumer
 from kafka.structs import TopicPartition
 
 DEFAULT_BROKERS = os.getenv("KAFKA_BROKERS_ALL", "localhost:9092,localhost:9093,localhost:9094")
@@ -24,19 +26,14 @@ DEFAULT_TOPICS = ["trace_topic", "p_wave_topic"]
 POLL_INTERVAL = 5  # detik antar pengambilan sampel
 
 
-def _get_end_offsets(brokers: list[str], topic: str) -> Dict[int, int]:
-    """Ambil end-offset semua partisi topik dari broker."""
-    from kafka import KafkaConsumer
-    consumer = KafkaConsumer(bootstrap_servers=brokers)
-    try:
-        partitions = consumer.partitions_for_topic(topic)
-        if not partitions:
-            return {}
-        tps = [TopicPartition(topic, p) for p in partitions]
-        offsets = consumer.end_offsets(tps)
-        return {tp.partition: v for tp, v in offsets.items()}
-    finally:
-        consumer.close()
+def _get_end_offsets(consumer: KafkaConsumer, topic: str) -> Dict[int, int]:
+    """Ambil end-offset semua partisi topik menggunakan consumer yang sudah ada."""
+    partitions = consumer.partitions_for_topic(topic)
+    if not partitions:
+        return {}
+    tps = [TopicPartition(topic, p) for p in partitions]
+    offsets = consumer.end_offsets(tps)
+    return {tp.partition: v for tp, v in offsets.items()}
 
 
 def _sum_offsets(offsets: Dict[int, int]) -> int:
@@ -46,8 +43,8 @@ def _sum_offsets(offsets: Dict[int, int]) -> int:
 def collect_kafka_offsets(
     duration_sec: int,
     output_file: str,
-    brokers: list[str],
-    topics: list[str],
+    brokers: List[str],
+    topics: List[str],
 ) -> None:
     print(
         f"Mulai pengukuran throughput Kafka selama {duration_sec}s "
@@ -63,38 +60,43 @@ def collect_kafka_offsets(
     # Header: timestamp + rate per topik
     headers = ["timestamp"] + [f"{t}_messages_per_sec" for t in topics]
 
-    # Ambil snapshot pertama
-    prev_offsets = {t: _sum_offsets(_get_end_offsets(brokers, t)) for t in topics}
-    prev_time = time.time()
+    # Buat satu consumer untuk seluruh durasi pengukuran
+    consumer = KafkaConsumer(bootstrap_servers=brokers)
+    try:
+        # Ambil snapshot pertama
+        prev_offsets = {t: _sum_offsets(_get_end_offsets(consumer, t)) for t in topics}
+        prev_time = time.time()
 
-    start_time = time.time()
+        start_time = time.time()
 
-    with open(output_file, "w", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
-        writer.writerow(headers)
+        with open(output_file, "w", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerow(headers)
 
-        while time.time() - start_time < duration_sec:
-            time.sleep(POLL_INTERVAL)
+            while time.time() - start_time < duration_sec:
+                time.sleep(POLL_INTERVAL)
 
-            now = time.time()
-            elapsed = now - prev_time
-            current_offsets = {
-                t: _sum_offsets(_get_end_offsets(brokers, t)) for t in topics
-            }
+                now = time.time()
+                elapsed = now - prev_time
+                current_offsets = {
+                    t: _sum_offsets(_get_end_offsets(consumer, t)) for t in topics
+                }
 
-            ts = time.strftime("%Y-%m-%d %H:%M:%S")
-            row = [ts]
-            for t in topics:
-                delta = current_offsets[t] - prev_offsets[t]
-                rate = round(delta / elapsed, 4) if elapsed > 0 else 0.0
-                row.append(rate)
+                ts = time.strftime("%Y-%m-%d %H:%M:%S")
+                row = [ts]
+                for t in topics:
+                    delta = current_offsets[t] - prev_offsets[t]
+                    rate = round(delta / elapsed, 4) if elapsed > 0 else 0.0
+                    row.append(rate)
 
-            writer.writerow(row)
-            f.flush()
-            print(f"[{ts}] {dict(zip(topics, row[1:]))}")
+                writer.writerow(row)
+                f.flush()
+                print(f"[{ts}] {dict(zip(topics, row[1:]))}")
 
-            prev_offsets = current_offsets
-            prev_time = now
+                prev_offsets = current_offsets
+                prev_time = now
+    finally:
+        consumer.close()
 
     print(f"Selesai. Data disimpan ke {output_file}")
 

@@ -31,18 +31,12 @@ async def connect_client(uri, client_id, duration):
     except Exception as e:
         print(f"Client {client_id} error: {e}")
 
-async def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--uri', type=str, required=True, help="WebSocket URI, e.g., ws://localhost:3334/ws")
-    parser.add_argument('--clients', type=int, required=True, help="Number of concurrent clients")
-    parser.add_argument('--duration', type=int, default=120, help="Duration in seconds to hold connections")
-    args = parser.parse_args()
-
-    print(f"Starting {args.clients} websocket clients to {args.uri} for {args.duration}s")
+async def main(uri: str, clients: int, duration: int) -> None:
+    print(f"Starting {clients} websocket clients to {uri} for {duration}s")
     
     tasks = []
-    for i in range(args.clients):
-        tasks.append(asyncio.create_task(connect_client(args.uri, i+1, args.duration)))
+    for i in range(clients):
+        tasks.append(asyncio.create_task(connect_client(uri, i+1, duration)))
         # Stagger connections slightly
         await asyncio.sleep(0.1) 
         
@@ -50,4 +44,10 @@ async def main():
     print("All clients finished.")
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--uri', type=str, required=True, help="WebSocket URI, e.g., ws://localhost:3334/ws")
+    parser.add_argument('--clients', type=int, required=True, help="Number of concurrent clients")
+    parser.add_argument('--duration', type=int, default=120, help="Duration in seconds to hold connections")
+    args = parser.parse_args()
+
+    asyncio.run(main(args.uri, args.clients, args.duration))
