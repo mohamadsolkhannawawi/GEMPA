@@ -163,8 +163,6 @@ services:
     tty: true
     env_file:
       - .env
-    environment:
-      PWAVE_MAX_INFLIGHT: "2"
     depends_on:
       - kafka1
     restart: always

@@ -95,12 +95,6 @@ else:
     PWAVE_E2E_LATENCY = None
 
 
-# Batasi jumlah thread inferensi paralel untuk mencegah ledakan alokasi memori TensorFlow.
-# Setiap inference call dapat mengalokasikan >1 GB; 4 thread paralel aman di mesin 32 GB WSL.
-_MAX_INFLIGHT_INFERENCES = int(os.getenv("PWAVE_MAX_INFLIGHT", "4"))
-_inference_semaphore = threading.Semaphore(_MAX_INFLIGHT_INFERENCES)
-
-
 class TraceConsumer:
     """Kafka consumer yang mendeteksi P-wave pada setiap trace seismik masuk."""
 
@@ -331,8 +325,6 @@ class TraceConsumer:
 
         Menerima salinan data yang sudah mandiri (tidak berbagi referensi list
         dengan cache), sehingga aman dijalankan paralel.
-        Semaphore _inference_semaphore membatasi jumlah inferensi aktif sekaligus
-        untuk mencegah lonjakan alokasi memori TensorFlow.
         """
         if ENABLE_METRICS and PWAVE_INFLIGHT:
             PWAVE_INFLIGHT.inc()
@@ -342,12 +334,8 @@ class TraceConsumer:
             new_length = int(len(worker_data['data']) / ratio)
 
             if new_length >= 160:
-                _inference_semaphore.acquire()
-                try:
-                    trace = self.setTrace(worker_data)
-                    self.predict(trace, worker_data['data_provider_time'], arrive_time)
-                finally:
-                    _inference_semaphore.release()
+                trace = self.setTrace(worker_data)
+                self.predict(trace, worker_data['data_provider_time'], arrive_time)
 
             logger.debug(
                 f"Delay Kafka: {data_delay:.4f}s"
