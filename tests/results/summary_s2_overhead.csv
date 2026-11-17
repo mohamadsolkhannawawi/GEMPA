@@ -1,0 +1,4 @@
+Kondisi,DP CPU Mean (%),DP CPU P95 (%),DP RAM Mean (MB),DP RAM Max (MB),PW CPU Mean (%),PW CPU P95 (%),PW RAM Mean (MB),PW RAM Max (MB),Run Valid,Status
+Tanpa Metrics (CLI),N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,0/1,INVALID
+Tanpa Metrics (API),N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,0/1,INVALID
+Dengan Metrics (Prometheus),N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,0/1,INVALID
