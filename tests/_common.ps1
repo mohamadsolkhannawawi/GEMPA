@@ -89,8 +89,9 @@ function Wait-SystemReady {
 
         } else {
             # --- Mode NoMetrics ---
-
-            # Lapis 1: cek container Running
+            # Tidak cek offset Kafka (Kafka butuh ~90s untuk fully ready,
+            # sehingga partitions_for_topic selalu None di awal).
+            # Cukup pastikan container UP dan sudah berjalan minimal 90 detik.
             $pwaveUp = (docker ps --format "{{.Names}} {{.Status}}" 2>$null) |
                 Where-Object { $_ -match 'p_wave_detector' -and $_ -match 'Up' }
             $dpUp = (docker ps --format "{{.Names}} {{.Status}}" 2>$null) |
@@ -102,25 +103,15 @@ function Wait-SystemReady {
                 continue
             }
 
-            # Lapis 2: cek offset Kafka via Python
-            $pyOneLiner = 'from kafka import KafkaConsumer; from kafka.structs import TopicPartition; c=KafkaConsumer(bootstrap_servers=["localhost:9092"],request_timeout_ms=5000); p=c.partitions_for_topic("trace_topic"); print(sum(c.end_offsets([TopicPartition("trace_topic",x) for x in p]).values()) if p else 0); c.close()'
-            $offsetStr = & $PythonExe -c $pyOneLiner 2>$null
-            $offset = 0
-            if ($offsetStr -match '^\d+$') { $offset = [long]($offsetStr.Trim()) }
-
-            if ($offset -gt 0) {
-                Write-Host "Sistem siap (NoMetrics): container UP, offset trace_topic = $offset" -ForegroundColor Green
-                return $true
-            }
-
-            # Setelah 2/3 timeout, container UP sudah cukup
             $elapsed = ((Get-Date) - $startTime).TotalSeconds
-            if ($elapsed -gt ($TimeoutSec * 0.67)) {
-                Write-Host "Sistem siap (NoMetrics): container UP, SeedLink masih connect..." -ForegroundColor Yellow
-                return $true
+            if ($elapsed -lt 90) {
+                Write-Host "  Menunggu (NoMetrics)... container UP, stabilisasi awal ($([math]::Round($elapsed))s / 90s)"
+                Start-Sleep $PollSec
+                continue
             }
 
-            Write-Host "  Menunggu (NoMetrics)... offset trace_topic = $offset (container UP)"
+            Write-Host "Sistem siap (NoMetrics): semua container UP selama $([math]::Round($elapsed))s" -ForegroundColor Green
+            return $true
         }
 
         Start-Sleep $PollSec

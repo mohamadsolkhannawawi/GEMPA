@@ -50,8 +50,8 @@ foreach ($s in $BaseScenarios) {
 
         Wait-SystemReady -TimeoutSec 300
 
-        Write-Host "Stabilisasi 60s..."
-        Start-Sleep 60
+        Write-Host "Stabilisasi 120s (TensorFlow warm-up)..."
+        Start-Sleep 120
 
         $outRun  = $s.OutMetrics -replace '\.csv$', "_run${run}.csv"
         $metaOut = $outRun -replace '\.csv$', '_meta.json'
