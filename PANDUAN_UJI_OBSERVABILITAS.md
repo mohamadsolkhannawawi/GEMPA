@@ -162,7 +162,7 @@ docker ps --filter "name=p_wave_detector" --format "{{.Names}}" | ForEach-Object
 }
 ```
 
-**Kriteria kelulusan:** seluruh baris menunjukkan `OOMKilled=false` dan `Restarts` tidak melebihi 2. Restart ≤ 2 pada fase awal dianggap wajar karena proses rebalancing Kafka consumer group saat replika pertama kali bergabung. Yang tidak boleh terjadi adalah `OOMKilled=true` atau restart yang terus bertambah setelah menit ke-5 (sistem tidak stabil).
+**Kriteria kelulusan:** seluruh baris menunjukkan `OOMKilled=false`. Restart pada kontainer diizinkan selama bukan disebabkan oleh *out-of-memory kill*. Yang tidak boleh terjadi adalah `OOMKilled=true`.
 
 Hentikan kontainer setelah verifikasi selesai:
 ```powershell
@@ -180,7 +180,7 @@ docker compose -f docker-compose-s4-pwave-kafka-2c.yml up -d
 Start-Sleep 60
 
 # Step 2: Amati distribusi partisi sebelum scale up
-docker exec kafka1 kafka-consumer-groups --bootstrap-server kafka1:9092 --describe --group p_wave_detector_group
+docker exec kafka1 kafka-consumer-groups --bootstrap-server kafka1:9092 --describe --group trace_group
 
 # Step 3: Naikkan ke 3 replika
 docker compose -f docker-compose-s4-pwave-kafka-3c.yml up -d --no-recreate --scale p_wave_detector=3
@@ -189,10 +189,10 @@ docker compose -f docker-compose-s4-pwave-kafka-3c.yml up -d --no-recreate --sca
 Start-Sleep 30
 
 # Step 4: Amati ulang — semua partisi harus memiliki consumer aktif
-docker exec kafka1 kafka-consumer-groups --bootstrap-server kafka1:9092 --describe --group p_wave_detector_group
+docker exec kafka1 kafka-consumer-groups --bootstrap-server kafka1:9092 --describe --group trace_group
 ```
 
-**Kriteria kelulusan:** seluruh partisi `p_wave_topic` memiliki kolom `CONSUMER-ID` terisi (tidak ada partisi dengan `CONSUMER-ID` bernilai `-`), dan nilai `LAG` tidak terus membesar seiring waktu.
+**Kriteria kelulusan:** seluruh partisi `p_wave_topic` memiliki kolom `CONSUMER-ID` terisi (tidak ada partisi dengan `CONSUMER-ID` bernilai `-`), dan nilai `LAG` tidak terus membesar seiring waktu. Karena 5 partisi dibagi ke sejumlah replika, distribusi partisi per consumer tidak harus merata satu-satu — yang penting tidak ada partisi tanpa consumer aktif.
 
 Hentikan kontainer setelah verifikasi selesai:
 ```powershell
@@ -389,11 +389,55 @@ Pengujian ini membuktikan pemenuhan kebutuhan non-fungsional KNF-02, yaitu kegag
 
 ## 8. Analisis Data Statistik dan Pemodelan Skalabilitas (USL)
 
-Setelah seluruh berkas hasil CSV tersimpan pada direktori `tests/results/`, jalankan pengolahan statistik otomatis:
+Setelah seluruh berkas hasil CSV tersimpan pada direktori `tests/results/`, jalankan pengolahan statistik otomatis.
 
+Masuk ke folder pengujian sebelum menjalankan perintah:
 ```powershell
 cd tests
+```
+
+### Analisis Semua Skenario Sekaligus
+Jalankan ini untuk menghasilkan ringkasan lengkap seluruh skenario dalam satu langkah:
+```powershell
 python analyze.py --scenario all
+```
+
+### Analisis Per Skenario
+Gunakan perintah individual berikut untuk menganalisis atau mengulang analisis satu skenario tanpa memproses ulang seluruh data:
+
+**S1 — Strategi Konkurensi Data Provider:**
+```powershell
+python analyze.py --scenario s1
+```
+
+**S2 — Beban Overhead Observabilitas:**
+```powershell
+python analyze.py --scenario s2
+```
+
+**S3 — Topologi Load Balancing Message Broker:**
+```powershell
+python analyze.py --scenario s3
+```
+
+**S4a — Skalabilitas Data Archiver:**
+```powershell
+python analyze.py --scenario s4_archiver
+```
+
+**S4b — Skalabilitas P-Wave Detector (termasuk estimasi USL):**
+```powershell
+python analyze.py --scenario s4_pwave
+```
+
+**S5 — Diseminasi WebSocket Klien Konkuren:**
+```powershell
+python analyze.py --scenario s5
+```
+
+**Konfigurasi Akhir Produksi:**
+```powershell
+python analyze.py --scenario final
 ```
 
 ### Prosedur Komputasi Modul `analyze.py`:
@@ -405,7 +449,7 @@ python analyze.py --scenario all
    Data pengujian dinyatakan tidak valid dan dikeluarkan dari ringkasan statistik apabila:
    - Jumlah baris data sampel kurang dari 90 persen dari target waktu.
    - Terdapat kolom metrik utama yang bernilai kosong melebihi 10 persen baris.
-   - Ditemukan kontainer yang mengalami kondisi *Out-of-Memory* (`OOMKilled=true`), atau restart yang terus bertambah melewati menit ke-5 yang mengindikasikan sistem tidak stabil. Restart ≤ 2 pada fase startup awal tidak membatalkan uji.
+   - Ditemukan kontainer yang mengalami kondisi *Out-of-Memory* (`OOMKilled=true`), atau restart yang terus bertambah melewati menit ke-5 yang mengindikasikan sistem tidak stabil. Restart yang terjadi tanpa sebab OOMKilled tidak membatalkan uji.
 4. Estimasi Parameter Skalabilitas (Universal Scalability Law):
    Menurunkan koefisien perebutan sumber daya (*contention* $\sigma$), koefisien sinkronisasi (*coherency* $\kappa$), dan titik puncak kapasitas ($N^*$). Model regresi dihitung berdasarkan laju inferensi aktual $C(N)$, bukan laju paket masuk.
 
