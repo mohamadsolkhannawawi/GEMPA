@@ -160,6 +160,7 @@ services:
       DATA_PROVIDER_MODE: "hibrida"
     depends_on:
       - kafka1
+      - kafka-init
     restart: always
 
   p_wave_detector_load_balance:

@@ -158,6 +158,7 @@ services:
       - .env
     depends_on:
       - kafka1
+      - kafka-init
     restart: always
 
   p_wave_detector_load_balance:

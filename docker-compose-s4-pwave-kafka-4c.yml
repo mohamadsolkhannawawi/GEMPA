@@ -1,5 +1,5 @@
-﻿# ==============================================================================
-# SKENARIO    : S4 — Uji Skalabilitas (Stress Testing) (P-Wave Detector)
+# ==============================================================================
+# SKENARIO    : S4 � Uji Skalabilitas (Stress Testing) (P-Wave Detector)
 # KONFIGURASI : Kafka Native - 4 Container P-Wave Detector
 # PERINTAH    : docker compose -f docker-compose-s3-pwave-kafka-4c.yml up -d --build
 # ==============================================================================
@@ -149,6 +149,7 @@ services:
       DATA_PROVIDER_MODE: "multithread"
     depends_on:
       - kafka1
+      - kafka-init
     restart: always
 
   p_wave_detector:
