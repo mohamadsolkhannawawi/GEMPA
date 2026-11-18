@@ -1,0 +1,9 @@
+Arsitektur,Replika ML,Throughput pwave_topic (Trace/s),Laju Deteksi (det/s),Latensi Inferensi P95 (ms),E2E P95 (ms),CPU Mean (%),RAM Mean (MB),Run Valid,Status
+Native Kafka,2 Container,57.91,0.39,88500.0,88500.0,459.8,4881.33,1/1,VALID
+Native Kafka,3 Container,57.39,3.74,168600.0,177000.0,551.48,9306.11,1/1,VALID
+Native Kafka,4 Container,58.16,3.85,112419.02,143238.6,552.36,10950.03,1/1,VALID
+Native Kafka,5 Container,58.77,4.71,117888.75,176807.14,821.22,14597.06,1/1,VALID
+Load Balancer,2 Container,58.14,9.51,170141.85,176951.79,413.12,4660.33,1/1,VALID
+Load Balancer,3 Container,58.18,12.9,110524.14,172442.63,551.37,6717.19,1/1,VALID
+Load Balancer,4 Container,58.99,15.78,39951.76,119013.91,623.31,8403.15,1/1,VALID
+Load Balancer,5 Container,57.41,17.29,23071.58,115970.49,673.91,9771.37,1/1,VALID
