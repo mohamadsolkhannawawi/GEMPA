@@ -134,6 +134,7 @@ services:
       ENABLE_METRICS: "true"
     depends_on:
       - kafka1
+      - kafka-init
     restart: always
 
   # Kafka -> Load Balancer Service -> NGINX -> HTTP P-Wave Detectors

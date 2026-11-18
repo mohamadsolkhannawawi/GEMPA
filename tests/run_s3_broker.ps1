@@ -45,7 +45,7 @@ foreach ($s in $BaseScenarios) {
         docker compose -f $($s.File) down -v --remove-orphans 2>$null
         docker compose -f $($s.File) up -d --build --remove-orphans
 
-        Wait-SystemReady -TimeoutSec 300
+        Wait-SystemReady -TimeoutSec 300 -RelaxDpRate | Out-Null
 
         Write-Host "Stabilisasi 60s..."
         Start-Sleep 60
