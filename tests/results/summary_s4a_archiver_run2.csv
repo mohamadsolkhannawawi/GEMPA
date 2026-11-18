@@ -1,0 +1,6 @@
+Replika Archiver,CPU Mean (%),CPU Max (%),RAM Mean (MB),Records Saved (rec/s),Write Latency InfluxDB P95 (ms),Write Latency MongoDB P95 (ms),Run Valid,Status
+1 Container,98.62,120.95,93.62,206.26,48.9,46.23,1/1,VALID
+2 Container,168.13,211.72,150.46,329.25,49.31,47.37,1/1,VALID
+3 Container,215.0,235.69,210.19,421.09,49.27,47.87,1/1,VALID
+4 Container,128.44,222.67,278.9,186.22,47.35,N/A,1/1,VALID
+5 Container,146.41,207.44,335.11,186.53,47.11,N/A,1/1,VALID

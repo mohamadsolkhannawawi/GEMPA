@@ -1,9 +1,9 @@
 Arsitektur,Replika ML,Throughput pwave_topic (Trace/s),Laju Deteksi (det/s),Latensi Inferensi P95 (ms),E2E P95 (ms),CPU Mean (%),RAM Mean (MB),Run Valid,Status
-Native Kafka,2 Container,57.91,0.39,88500.0,88500.0,459.8,4881.33,1/1,VALID
-Native Kafka,3 Container,57.39,3.74,168600.0,177000.0,551.48,9306.11,1/1,VALID
-Native Kafka,4 Container,58.16,3.85,112419.02,143238.6,552.36,10950.03,1/1,VALID
-Native Kafka,5 Container,58.77,4.71,117888.75,176807.14,821.22,14597.06,1/1,VALID
-Load Balancer,2 Container,58.14,9.51,170141.85,176951.79,413.12,4660.33,1/1,VALID
-Load Balancer,3 Container,58.18,12.9,110524.14,172442.63,551.37,6717.19,1/1,VALID
-Load Balancer,4 Container,58.99,15.78,39951.76,119013.91,623.31,8403.15,1/1,VALID
-Load Balancer,5 Container,57.41,17.29,23071.58,115970.49,673.91,9771.37,1/1,VALID
+Native Kafka,2 Container,62.44,1.38,88500.0,116125.0,463.52,5482.15,1/1,VALID
+Native Kafka,3 Container,61.46,4.28,87777.41,177000.0,558.58,8933.99,1/1,VALID
+Native Kafka,4 Container,61.17,1.67,118500.0,118500.0,562.81,9682.08,1/1,VALID
+Native Kafka,5 Container,51.89,3.39,167207.48,177000.0,629.66,12310.49,1/1,VALID
+Load Balancer,2 Container,62.13,8.91,171841.84,176905.33,415.43,5528.92,1/1,VALID
+Load Balancer,3 Container,61.76,13.24,88136.09,174774.08,559.1,7061.26,1/1,VALID
+Load Balancer,4 Container,61.18,17.64,55825.51,118435.1,715.98,8257.65,1/1,VALID
+Load Balancer,5 Container,60.43,19.39,40800.75,117139.39,667.32,9185.2,1/1,VALID

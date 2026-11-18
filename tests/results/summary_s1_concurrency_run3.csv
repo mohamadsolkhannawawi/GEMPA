@@ -1,0 +1,5 @@
+Arsitektur,Throughput trace_topic (Trace/s),Throughput pwave_topic (Trace/s),Received (Trace/s),Dropped Stale (Trace/s),DP CPU Mean (%),DP RAM Mean (MB),PW CPU Mean (%),PW RAM Mean (MB),Run Valid,Status
+SEQUENTIAL,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,0/1,INVALID
+MULTITHREAD,159.46,52.6,167.59,8.15,65.04,87.0,657.96,7878.38,1/1,VALID
+MULTIPROCESS,162.04,53.5,170.7,8.65,48.1,386.46,705.84,9377.32,1/1,VALID
+HIBRIDA,76.64,25.79,87.24,10.63,27.5,263.1,434.8,5037.12,1/1,VALID
