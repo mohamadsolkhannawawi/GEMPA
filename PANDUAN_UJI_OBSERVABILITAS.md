@@ -19,8 +19,9 @@ Dokumen ini merupakan panduan operasional resmi untuk melaksanakan seluruh rangk
 6. [Prosedur Pengujian Konfigurasi Akhir Sistem GEMPA](#6-prosedur-pengujian-konfigurasi-akhir-sistem-gempa)
 7. [Pengujian Keandalan dan Isolasi Kegagalan (KNF-02)](#7-pengujian-keandalan-dan-isolasi-kegagalan-knf-02)
 8. [Analisis Data Statistik dan Pemodelan Skalabilitas (USL)](#8-analisis-data-statistik-dan-pemodelan-skalabilitas-usl)
-9. [Daftar Luaran Pengujian (Deliverables)](#9-daftar-luaran-pengujian-deliverables)
-10. [Verifikasi Penyimpanan Data dan Penanganan Kendala](#10-verifikasi-penyimpanan-data-dan-penanganan-kendala)
+9. [Manajemen Multi-Run dan Verifikasi Konsistensi](#9-manajemen-multi-run-dan-verifikasi-konsistensi)
+10. [Daftar Luaran Pengujian (Deliverables)](#10-daftar-luaran-pengujian-deliverables)
+11. [Verifikasi Penyimpanan Data dan Penanganan Kendala](#11-verifikasi-penyimpanan-data-dan-penanganan-kendala)
 
 ---
 
@@ -455,7 +456,110 @@ python analyze.py --scenario final
 
 ---
 
-## 9. Daftar Luaran Pengujian (Deliverables)
+## 9. Manajemen Multi-Run dan Verifikasi Konsistensi
+
+Pengujian ulang dilakukan untuk membuktikan bahwa pemilihan arsitektur pada setiap skenario konsisten lintas run, bukan artefak run tunggal. Bagian ini menjelaskan cara menyimpan, menganalisis, dan membandingkan setiap run secara terpisah sebelum digabungkan menjadi rata-rata akhir.
+
+### A. Prinsip Penyimpanan
+
+Setiap run disimpan sebagai berkas terpisah dengan sufiks `_runN`:
+```
+tests/results/
+  s1_multithread_metrics_run1.csv    ← data mentah run 1
+  s1_multithread_metrics_run2.csv    ← data mentah run 2
+  s1_multithread_metrics_run3.csv    ← data mentah run 3
+  summary_s1_concurrency_run1.csv    ← ringkasan run 1 saja
+  summary_s1_concurrency_run2.csv    ← ringkasan run 2 saja
+  summary_s1_concurrency_run3.csv    ← ringkasan run 3 saja
+  summary_s1_concurrency.csv         ← rata-rata semua run (dibuat terakhir)
+```
+
+Folder arsip permanen sebelum pengujian ulang:
+```
+tests/results_run1_arsip/            ← snapshot seluruh hasil run pertama
+tests/results_v1_arsip/              ← arsip otomatis dari skrip run_s*.ps1
+```
+
+### B. Menjalankan Pengujian Ulang (Run ke-2 dan Seterusnya)
+
+Semua skrip `run_s*.ps1` mendukung parameter `-Repeat N`. Nilai `N` adalah jumlah total run yang dijalankan dalam satu sesi — skrip otomatis menyimpan sebagai `_run1.csv`, `_run2.csv`, dst.
+
+Untuk menjalankan satu run tambahan (run ke-2):
+```powershell
+cd D:\MDLBEEWS-V3
+git pull
+
+.\tests\run_s1_dataprovider.ps1 -Repeat 2
+.\tests\run_s2_overhead.ps1 -Repeat 2
+.\tests\run_s3_broker.ps1 -Repeat 2
+.\tests\run_s4_scalability_archiver.ps1 -Repeat 2
+.\tests\run_s4_scalability_pwave.ps1 -Repeat 2
+.\tests\run_s5_websocket.ps1 -Repeat 2
+```
+
+> **Catatan:** skrip akan mengarsipkan `_run1.csv` lama ke `results_v1_arsip/` lalu membuat ulang `_run1.csv` baru, kemudian membuat `_run2.csv`. Data run pertama yang sudah diarsipkan ke `results_run1_arsip/` tetap aman karena folder itu tidak disentuh skrip.
+
+### C. Menganalisis Setiap Run Secara Terpisah
+
+Gunakan flag `--run N` pada `analyze.py` untuk menghasilkan ringkasan satu run tanpa menggabungkan run lain:
+
+```powershell
+cd tests
+
+# Analisis run 1 saja
+python analyze.py --scenario all --run 1
+
+# Analisis run 2 saja
+python analyze.py --scenario all --run 2
+
+# Analisis run 3 saja (setelah run 3 selesai)
+python analyze.py --scenario all --run 3
+```
+
+Setiap perintah menghasilkan berkas terpisah, misalnya `summary_s1_concurrency_run2.csv`, tanpa menimpa berkas run lain.
+
+### D. Membandingkan Konsistensi Antar-Run
+
+Setelah `_run1.csv` dan `_run2.csv` tersedia, bandingkan ringkasannya secara manual untuk memverifikasi bahwa pemilihan arsitektur konsisten:
+
+```powershell
+# Bandingkan S1: apakah MULTITHREAD tetap menang di run 2?
+Compare-Object (Import-Csv results/summary_s1_concurrency_run1.csv) `
+               (Import-Csv results/summary_s1_concurrency_run2.csv) -Property Arsitektur, "Throughput trace_topic (Trace/s)"
+
+# Bandingkan S4b: apakah Load Balancer 5 Container tetap optimal?
+Compare-Object (Import-Csv results/summary_s4b_pwave_run1.csv) `
+               (Import-Csv results/summary_s4b_pwave_run2.csv) -Property Arsitektur, "Replika ML", "Laju Deteksi (det/s)"
+```
+
+Kriteria konsistensi: arsitektur pemenang pada run 1 tetap menjadi arsitektur dengan nilai terbaik pada run 2 untuk metrik utama (throughput, laju deteksi, latency P95).
+
+### E. Menggabungkan Semua Run (Rata-Rata Akhir)
+
+Setelah minimal 3 run selesai dan konsistensi terverifikasi, baru jalankan tanpa flag `--run` untuk menghasilkan ringkasan gabungan:
+
+```powershell
+python analyze.py --scenario all
+```
+
+Ini membaca semua `_run1.csv`, `_run2.csv`, `_run3.csv` secara otomatis, menggabungkan seluruh sampel, lalu menghasilkan `summary_s1_concurrency.csv` (dan seterusnya) berisi rata-rata lintas semua run. Berkas inilah yang digunakan sebagai tabel final di Bab IV.
+
+### F. Konfigurasi Optimal yang Telah Dikonfirmasi (Run 1)
+
+Tabel berikut merangkum keputusan arsitektur dari hasil pengujian run pertama yang akan diverifikasi ulang di run berikutnya:
+
+| Skenario | Konfigurasi Terpilih | Metrik Penentu (Run 1) |
+|---|---|---|
+| S1 | Multithread | Throughput 168 tr/s, RAM hemat vs Multiprocess |
+| S2 | Prometheus aktif | Overhead CPU hanya +0.6% |
+| S3 | Kafka + NGINX Load Balancer | E2E P95 116s vs 173s Native |
+| S4a | Data Archiver 3 Replika | Saturasi di 346 rec/s, 4–5 replika tidak menambah throughput |
+| S4b | P-Wave LB 5 Replika | Laju deteksi 17.29/s, latency inferensi 23s |
+| S5 | Express.js | Broadcast P95 2.17ms, CPU 24% |
+
+---
+
+## 10. Daftar Luaran Pengujian (Deliverables)
 
 Seluruh berkas luaran berikut wajib disimpan dan didokumentasikan untuk kebutuhan penulisan Bab IV:
 
@@ -469,7 +573,7 @@ Seluruh berkas luaran berikut wajib disimpan dan didokumentasikan untuk kebutuha
 
 ---
 
-## 10. Verifikasi Penyimpanan Data dan Penanganan Kendala
+## 11. Verifikasi Penyimpanan Data dan Penanganan Kendala
 
 ### A. Verifikasi Basis Data InfluxDB
 Gunakan perintah berikut untuk memvalidasi penyimpanan sinyal gelombang pada bucket `gempa`:
