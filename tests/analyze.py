@@ -32,6 +32,14 @@ WINDOW_SEC = 150
 # Digunakan untuk menghitung jumlah baris minimum (90% dari ekspektasi)
 DEFAULT_INTERVAL_SEC = 5
 
+# Run yang dianalisis (None = gabungkan semua run yang ada)
+CURRENT_RUN: Optional[int] = None
+
+
+def _run_suffix() -> str:
+    """Kembalikan suffix nama file output, mis. '_run2' atau '' untuk gabungan."""
+    return f"_run{CURRENT_RUN}" if CURRENT_RUN is not None else ""
+
 
 # ==============================================================================
 # Utilitas parsing
@@ -264,14 +272,23 @@ def _warn_invalid(label: str, result: Optional[dict]) -> None:
 # Analisis per skenario
 # ==============================================================================
 
-def _read_runs(prefix: str, alt_prefix: Optional[str] = None) -> list:
+def _read_runs(prefix: str, alt_prefix: Optional[str] = None, run: Optional[int] = None) -> list:
     """
-    Kumpulkan semua file _run{N}.csv untuk suatu prefix, kembalikan list result
-    dari read_csv yang valid. Bila tidak ada, coba alt_prefix sebagai fallback.
+    Kumpulkan file _run{N}.csv untuk suatu prefix.
+
+    Bila run=None  → ambil semua run yang ada (perilaku lama, untuk gabungan).
+    Bila run=N     → hanya ambil _run{N}.csv (untuk analisis run tunggal).
     """
     import glob as _glob
+    if run is not None:
+        pattern = os.path.join(RESULTS_DIR, f"{prefix}_metrics_run{run}.csv")
+        paths = [pattern] if os.path.exists(pattern) else []
+        if not paths and alt_prefix:
+            pattern = os.path.join(RESULTS_DIR, f"{alt_prefix}_metrics_run{run}.csv")
+            paths = [pattern] if os.path.exists(pattern) else []
+        return paths
+
     pattern = os.path.join(RESULTS_DIR, f"{prefix}_metrics_run*.csv")
-    # Hanya ambil file per-run (bukan _buckets.csv)
     paths = sorted(
         p for p in _glob.glob(pattern)
         if not p.endswith("_buckets.csv")
@@ -328,7 +345,7 @@ def analyze_s1() -> None:
     table_data = []
 
     for mode_name, prefix, alt_prefix in scenarios:
-        paths = _read_runs(prefix, alt_prefix)
+        paths = _read_runs(prefix, alt_prefix, run=CURRENT_RUN)
 
         if not paths:
             # Fallback ke file agregat lama bila tidak ada file per-run sama sekali
@@ -369,7 +386,7 @@ def analyze_s1() -> None:
 
     save_and_print_table(
         "ANALISIS SKENARIO 1 (Optimasi Hulu / Concurrency Data Provider)",
-        headers, table_data, "summary_s1_concurrency.csv",
+        headers, table_data, f"summary_s1_concurrency{_run_suffix()}.csv",
     )
 
 
@@ -428,9 +445,9 @@ def analyze_s2() -> None:
             docker_api_paths = sorted(_glob.glob(
                 os.path.join(RESULTS_DIR, f"{prefix}_metrics_run*_docker_api.csv")
             ))
-            paths = docker_api_paths if docker_api_paths else _read_runs(prefix)
+            paths = docker_api_paths if docker_api_paths else _read_runs(prefix, run=CURRENT_RUN)
         else:
-            paths = _read_runs(prefix)
+            paths = _read_runs(prefix, run=CURRENT_RUN)
 
         merged_cols: dict = {}
         n_valid = 0
@@ -494,7 +511,7 @@ def analyze_s2() -> None:
 
     save_and_print_table(
         "ANALISIS SKENARIO 2 (Overhead Instrumentasi Prometheus — Docker SDK)",
-        headers, table_data, "summary_s2_overhead.csv",
+        headers, table_data, f"summary_s2_overhead{_run_suffix()}.csv",
     )
 
 
@@ -527,7 +544,7 @@ def analyze_s3() -> None:
     table_data = []
 
     for mode_label, prefix, is_lb in scenarios:
-        paths = _read_runs(prefix)
+        paths = _read_runs(prefix, run=CURRENT_RUN)
 
         merged_cols: dict = {}
         n_valid = 0
@@ -594,7 +611,7 @@ def analyze_s3() -> None:
 
     save_and_print_table(
         "ANALISIS SKENARIO 3 (Pemilihan Arsitektur Inti / Load Balancing)",
-        headers, table_data, "summary_s3_broker.csv",
+        headers, table_data, f"summary_s3_broker{_run_suffix()}.csv",
     )
 
 
@@ -617,7 +634,7 @@ def analyze_s4a() -> None:
     table_data_a = []
 
     for i in range(1, 6):
-        paths = _read_runs(f"s4_archiver_{i}_container")
+        paths = _read_runs(f"s4_archiver_{i}_container", run=CURRENT_RUN)
         merged_cols: dict = {}
         n_valid = 0
         for p in paths:
@@ -659,7 +676,7 @@ def analyze_s4a() -> None:
 
     save_and_print_table(
         "ANALISIS SKENARIO 4A (Skalabilitas Data Archiver / I/O Bound)",
-        headers_a, table_data_a, "summary_s4a_archiver.csv",
+        headers_a, table_data_a, f"summary_s4a_archiver{_run_suffix()}.csv",
     )
 
 
@@ -682,7 +699,7 @@ def analyze_s4b() -> None:
 
     for mode_label, prefix, is_lb, replika_range in scenarios_b:
         for i in replika_range:
-            paths = _read_runs(f"{prefix}_{i}c")
+            paths = _read_runs(f"{prefix}_{i}c", run=CURRENT_RUN)
             merged_cols2: dict = {}
             n_valid = 0
             for p in paths:
@@ -731,7 +748,7 @@ def analyze_s4b() -> None:
 
     save_and_print_table(
         "ANALISIS SKENARIO 4B (Skalabilitas P-Wave Detector / CPU Bound)",
-        headers_b, table_data_b, "summary_s4b_pwave.csv",
+        headers_b, table_data_b, f"summary_s4b_pwave{_run_suffix()}.csv",
     )
 
 
@@ -746,7 +763,7 @@ def analyze_s5() -> None:
 
     for mode_label, prefix in [("FastAPI", "s5_websocket_fastapi"), ("Express.js", "s5_websocket_express")]:
         for c in [1, 5]:
-            paths = _read_runs(f"{prefix}_{c}c")
+            paths = _read_runs(f"{prefix}_{c}c", run=CURRENT_RUN)
             merged_cols: dict = {}
             n_valid = 0
             for p in paths:
@@ -787,7 +804,7 @@ def analyze_s5() -> None:
 
     save_and_print_table(
         "ANALISIS SKENARIO 5 (Optimasi Hilir / Diseminasi WebSocket)",
-        headers, table_data, "summary_s5_websocket.csv",
+        headers, table_data, f"summary_s5_websocket{_run_suffix()}.csv",
     )
 
 
@@ -816,6 +833,16 @@ if __name__ == "__main__":
         help="Skenario yang dianalisis (1/s1, 2/s2, 3/s3, 4/s4_archiver/s4_pwave, 5/s5, all)",
     )
     parser.add_argument(
+        "--run",
+        type=int,
+        default=None,
+        help=(
+            "Nomor run yang dianalisis secara terpisah (mis. --run 1, --run 2). "
+            "Output: summary_sX_..._runN.csv. "
+            "Tanpa flag ini: gabungkan semua run yang ada (output: summary_sX_....csv)."
+        ),
+    )
+    parser.add_argument(
         "--warmup-sec",
         type=float,
         default=WARMUP_SEC,
@@ -829,9 +856,15 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    # Override global jendela bila diberikan lewat argumen
+    # Override global
     WARMUP_SEC = args.warmup_sec
     WINDOW_SEC = args.window_sec
+    CURRENT_RUN = args.run
+
+    if CURRENT_RUN is not None:
+        print(f"[Mode: Run {CURRENT_RUN} saja — output akan diberi suffix _run{CURRENT_RUN}]")
+    else:
+        print("[Mode: Gabungkan semua run yang ada]")
 
     if args.scenario in ("1", "s1"):
         analyze_s1()
