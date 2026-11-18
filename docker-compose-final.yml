@@ -1,7 +1,13 @@
 # ==============================================================================
 # EEWS FINAL PRODUCTION ARCHITECTURE
-# Konfigurasi: Multiprocess, NGINX Load Balancer, 5 ML Worker, 3 Archiver, FastAPI
-# Perintah    : docker compose -f docker-compose-final.yml up -d --build
+# Konfigurasi optimal berdasarkan hasil pengujian S1–S5:
+#   S1 → Data Provider  : Multithread (throughput 168 tr/s, CPU efisien)
+#   S2 → Prometheus     : Aktif (overhead CPU hanya +0.6%)
+#   S3 → Broker         : Kafka + NGINX Load Balancer (E2E P95 116s vs 173s Native)
+#   S4a→ Archiver       : 3 Replika (saturasi di 3, RAM hemat vs 4-5)
+#   S4b→ P-Wave ML      : Load Balancer 5 Replika (det. rate 17.29/s, latency 23s)
+#   S5 → WebSocket      : Express.js (broadcast P95 2.17ms, CPU 24%)
+# Perintah: docker compose -f docker-compose-final.yml up -d --build
 # ==============================================================================
 
 services:
@@ -156,7 +162,7 @@ services:
       - "9273:9273"
     restart: always
 
-  # --- GENERATOR DATA (Pemenang S1: Multiprocess) ---
+  # --- GENERATOR DATA (Pemenang S1: Multithread — throughput 168 tr/s) ---
   data_provider:
     container_name: data_provider
     build:
@@ -165,8 +171,11 @@ services:
     tty: true
     env_file:
       - .env
+    environment:
+      DATA_PROVIDER_MODE: "multithread"
     depends_on:
       - kafka1
+      - kafka-init
     restart: always
 
   # --- ARSITEKTUR HTTP P-WAVE (Pemenang S3: Kafka + NGINX Load Balancer & S4: 5 ML Replicas) ---
@@ -243,14 +252,14 @@ services:
       - mongo-express
     restart: always
 
-  # --- DISEMINASI WEBSOCKET (Pemenang S5: FastAPI WebSocket) ---
-  fast_api:
-    container_name: fast_api
+  # --- DISEMINASI WEBSOCKET (Pemenang S5: Express.js — broadcast P95 2.17ms, CPU 24%) ---
+  api_server:
+    container_name: api_server
     build:
       context: .
-      dockerfile: fast_api/Dockerfile
+      dockerfile: api_server/Dockerfile
     ports:
-      - "3334:3333"
+      - "3333:3333"
     tty: true
     env_file:
       - .env
