@@ -740,31 +740,49 @@ def analyze_s5() -> None:
         "WebSocket Server", "Klien Aktif",
         "Broadcast P95 (ms)",
         "CPU Mean (%)", "RAM Mean (MB)",
-        "Status",
+        "Run Valid", "Status",
     ]
     table_data = []
 
     for mode_label, prefix in [("FastAPI", "s5_websocket_fastapi"), ("Express.js", "s5_websocket_express")]:
         for c in [1, 5]:
-            path = os.path.join(RESULTS_DIR, f"{prefix}_{c}c_metrics.csv")
-            result = read_csv(path)
-            _warn_invalid(f"{mode_label} {c}c", result)
+            paths = _read_runs(f"{prefix}_{c}c")
+            merged_cols: dict = {}
+            n_valid = 0
+            for p in paths:
+                actual_interval = _actual_interval(p)
+                r = read_csv(p, interval_sec=actual_interval)
+                run_name = os.path.basename(p)
+                if r is not None:
+                    cpu_vals = [v for v in r["columns"].get(
+                        "ws_aggregate_cpu_percent", []) if v is not None]
+                    if len(cpu_vals) >= 10:
+                        r["valid"] = True
+                _warn_invalid(f"{mode_label} {c}c/{run_name}", r)
+                if r and r["valid"]:
+                    n_valid += 1
+                    for col, vals in r["columns"].items():
+                        merged_cols.setdefault(col, []).extend(vals)
 
-            status = "VALID" if (result and result["valid"]) else "INVALID"
+            status = "VALID" if n_valid > 0 else "INVALID"
+            run_summary = f"{n_valid}/{len(paths)}" if paths else "0/0"
+
+            def _cols(key: str) -> list:
+                return [v for v in merged_cols.get(key, []) if v is not None]
 
             if "fastapi" in prefix:
-                lat = calc_latency_stats(_get_cols(result, "fastapi_ws_broadcast_latency_p95"))
+                lat = calc_latency_stats(_cols("fastapi_ws_broadcast_latency_p95"))
             else:
-                lat = calc_latency_stats(_get_cols(result, "ws_broadcast_latency_p95"))
+                lat = calc_latency_stats(_cols("ws_broadcast_latency_p95"))
 
-            cpu = calc_stats(_get_cols(result, "ws_aggregate_cpu_percent"))
-            mem = calc_stats(_get_cols(result, "ws_aggregate_mem_mb"))
+            cpu = calc_stats(_cols("ws_aggregate_cpu_percent"))
+            mem = calc_stats(_cols("ws_aggregate_mem_mb"))
 
             table_data.append([
                 mode_label, f"{c} Klien",
                 lat["p95_of_window_p95"],
                 cpu["mean"], mem["mean"],
-                status,
+                run_summary, status,
             ])
 
     save_and_print_table(
