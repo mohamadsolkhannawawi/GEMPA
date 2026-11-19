@@ -1,3 +1,3 @@
 Kondisi,PW CPU Mean (%),PW CPU Std (%),PW CPU P95 (%),PW RAM Mean (MB),PW RAM Max (MB),Overhead CPU vs Baseline,Run Valid,Status
-Tanpa Metrics (Baseline),497.78,174.84,726.85,7903.55,12287.68,— (baseline),1/1,VALID
-Dengan Metrics (Prometheus),495.0,190.0,872.42,7933.33,12283.02,-2.78% (-0.6%),3/3,VALID
+Tanpa Metrics (Baseline),510.18,178.09,720.22,7670.43,12287.41,— (baseline),1/1,VALID
+Dengan Metrics (Prometheus),498.1,178.46,773.03,6894.95,12287.66,-12.08% (-2.4%),1/1,VALID

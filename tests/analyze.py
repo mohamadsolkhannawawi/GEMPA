@@ -442,9 +442,16 @@ def analyze_s2() -> None:
         if has_prometheus:
             # WithMetrics: pakai _docker_api.csv untuk perbandingan setara
             import glob as _glob
-            docker_api_paths = sorted(_glob.glob(
-                os.path.join(RESULTS_DIR, f"{prefix}_metrics_run*_docker_api.csv")
-            ))
+            if CURRENT_RUN is not None:
+                docker_api_path = os.path.join(
+                    RESULTS_DIR,
+                    f"{prefix}_metrics_run{CURRENT_RUN}_docker_api.csv"
+                )
+                docker_api_paths = [docker_api_path] if os.path.exists(docker_api_path) else []
+            else:
+                docker_api_paths = sorted(_glob.glob(
+                    os.path.join(RESULTS_DIR, f"{prefix}_metrics_run*_docker_api.csv")
+                ))
             paths = docker_api_paths if docker_api_paths else _read_runs(prefix, run=CURRENT_RUN)
         else:
             paths = _read_runs(prefix, run=CURRENT_RUN)
