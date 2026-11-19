@@ -16978,12 +16978,12 @@
                                         },
                          "ReadCount":  1
                      },
-    "compose_hash":  "F09DE423B097",
+    "compose_hash":  "F6338DC7A551",
     "python_exe":  "C:\\Users\\user\\miniconda3\\python.exe",
     "compose_file":  "docker-compose-s4-archiver-3c.yml",
-    "timestamp":  "2026-11-18T21:00:47Z",
+    "timestamp":  "2026-11-19T10:06:02Z",
     "env_hash":  "7F563A08B81F",
     "run_index":  2,
     "kafka_describe":  "OCI runtime exec failed: exec failed: unable to start container process: exec: \"kafka-topics.sh\": executable file not found in $PATH",
-    "git_commit":  "6b72678"
+    "git_commit":  "9ef92bb"
 }
