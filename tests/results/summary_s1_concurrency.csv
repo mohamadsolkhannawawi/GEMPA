@@ -1,5 +1,5 @@
-Arsitektur,Throughput trace_topic (Trace/s),Throughput pwave_topic (Trace/s),Received (Trace/s),Dropped Stale (Trace/s),DP CPU Mean (%),DP RAM Mean (MB),PW CPU Mean (%),PW RAM Mean (MB),Run Valid,Status
-SEQUENTIAL,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,0/3,INVALID
-MULTITHREAD,160.68,53.0,170.86,10.19,59.92,92.14,661.61,8125.9,3/3,VALID
-MULTIPROCESS,163.27,53.8,171.48,8.21,47.22,383.57,706.28,8855.53,3/3,VALID
-HIBRIDA,74.45,24.79,82.76,8.34,27.12,250.41,478.18,6096.75,3/3,VALID
+Arsitektur,Throughput trace_topic (Trace/s),Throughput trace_topic Std,Throughput pwave_topic (Trace/s),Received (Trace/s),Dropped Stale (Trace/s),DP CPU Mean (%),DP CPU Std (%),DP RAM Mean (MB),DP RAM Std (MB),PW CPU Mean (%),PW RAM Mean (MB),Run Valid,Status
+SEQUENTIAL,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,0/3,INVALID
+MULTITHREAD,160.68,1.56,53.0,170.86,10.19,59.92,9.59,92.14,4.8,661.61,8125.9,3/3,VALID
+MULTIPROCESS,163.27,2.19,53.8,171.48,8.21,47.22,5.3,383.57,17.61,706.28,8855.53,3/3,VALID
+HIBRIDA,74.45,2.27,24.79,82.76,8.34,27.12,7.32,250.41,12.86,478.18,6096.75,3/3,VALID

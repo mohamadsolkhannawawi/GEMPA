@@ -1,5 +1,5 @@
-WebSocket Server,Klien Aktif,Broadcast P95 (ms),CPU Mean (%),RAM Mean (MB),Run Valid,Status
-FastAPI,1 Klien,1.74,31.02,40.95,3/3,VALID
-FastAPI,5 Klien,4.85,50.13,49.91,3/3,VALID
-Express.js,1 Klien,0.5,22.04,87.13,3/3,VALID
-Express.js,5 Klien,2.82,25.39,92.98,3/3,VALID
+WebSocket Server,Klien Aktif,Broadcast P95 (ms),Broadcast Std (ms),CPU Mean (%),CPU Std (%),RAM Mean (MB),RAM Std (MB),Run Valid,Status
+FastAPI,1 Klien,1.74,0.27,31.02,5.13,40.95,1.45,3/3,VALID
+FastAPI,5 Klien,4.85,0.02,50.13,8.66,49.91,1.63,3/3,VALID
+Express.js,1 Klien,0.5,0.01,22.04,2.38,87.13,15.02,3/3,VALID
+Express.js,5 Klien,2.82,0.75,25.39,3.09,92.98,8.74,3/3,VALID
