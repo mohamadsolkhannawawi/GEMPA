@@ -1,12 +1,12 @@
 # ==============================================================================
 # EEWS FINAL PRODUCTION ARCHITECTURE
 # Konfigurasi optimal berdasarkan hasil pengujian S1–S5:
-#   S1 → Data Provider  : Multithread (throughput 168 tr/s, CPU efisien)
-#   S2 → Prometheus     : Aktif (overhead CPU hanya +0.6%)
-#   S3 → Broker         : Kafka + NGINX Load Balancer (E2E P95 116s vs 173s Native)
-#   S4a→ Archiver       : 3 Replika (saturasi di 3, RAM hemat vs 4-5)
-#   S4b→ P-Wave ML      : Load Balancer 5 Replika (det. rate 17.29/s, latency 23s)
-#   S5 → WebSocket      : Express.js (broadcast P95 2.17ms, CPU 24%)
+#   S1 → Data Provider  : Multithread (throughput 160.68 tr/s, CPU 59.92%, RAM 92 MB)
+#   S2 → Prometheus     : Aktif (overhead CPU -4.0%, overhead RAM +2.0%)
+#   S3 → Broker         : Kafka + NGINX Load Balancer (E2E P95 119s vs 244s Native, +42% throughput)
+#   S4a→ Archiver       : 3 Replika (throughput 297.66 rec/s, latency P95 49ms)
+#   S4b→ P-Wave ML      : Load Balancer 5 Replika (laju deteksi 19.48 det/s, inferensi P95 40.5s)
+#   S5 → WebSocket      : Express.js (broadcast P95 2.82ms, CPU 25.39%, 2-3x lebih cepat dari FastAPI)
 # Perintah: docker compose -f docker-compose-final.yml up -d --build
 # ==============================================================================
 
