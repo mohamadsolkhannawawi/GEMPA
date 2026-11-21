@@ -1,36 +1,37 @@
 """
-analyze.py — Analisis hasil pengujian EEWS per skenario.
+analyze.py — Analisis terpadu hasil pengujian prototipe EEWS per skenario (S1–S5).
 
-Perbaikan K3:
-- Pemotongan jendela berdasarkan WAKTU absolut (buang 50 detik pertama sejak
-  sampel pertama; ambil 150 detik berikutnya), bukan berdasarkan baris tetap.
-- Persentil menggunakan numpy.percentile agar presisi.
-- Kolom P95 diberi label tegas "p95_of_window_p95".
-- Run ditandai INVALID bila: baris < 90% dari yang diharapkan, kolom kosong > 10%,
-  atau ada baris OOM/restart. Run INVALID tidak masuk ringkasan.
-- Ringkasan lintas pengulangan: mean, std, min, max, jumlah run valid.
+Perbaikan terpadu:
+- Pemotongan jendela analisis berbasis waktu absolut (buang WARMUP_SEC=50s awal;
+  ambil WINDOW_SEC=150s berikutnya) dengan binding argumen dinamis agar flag CLI
+  --warmup-sec dan --window-sec berfungsi penuh.
+- Interval sampling aktual (_actual_interval) diterapkan seragam di S1–S5.
+- Persentil P95 menggunakan numpy.percentile dengan label tegas "p95_of_window_p95".
+- Menyertakan simpangan baku (Std) pada metrik utama di seluruh ringkasan S1–S5.
+- Mengintegrasikan uji validitas statistik Skenario 2 (per-run & grand mean vs
+  pooled-std pada jendela 50–200s yang sama) sehingga tidak memerlukan skrip
+  s2_analysis.py terpisah.
 """
 
 import argparse
 import csv
+import glob
 import math
 import os
-import statistics
 from collections import defaultdict
 from datetime import datetime
 from typing import Optional
 
 import numpy as np
 
-RESULTS_DIR = os.path.join(os.path.dirname(__file__), "results")
+RESULTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results")
 
-# Jendela analisis (detik) — sesuai protokol bersama
-WARMUP_SEC = 50
-WINDOW_SEC = 150
+# Jendela analisis (detik) — sesuai protokol pengujian
+WARMUP_SEC = 50.0
+WINDOW_SEC = 150.0
 
-# Interval pengambilan sampel yang diharapkan (detik)
-# Digunakan untuk menghitung jumlah baris minimum (90% dari ekspektasi)
-DEFAULT_INTERVAL_SEC = 5
+# Interval pengambilan sampel default (detik)
+DEFAULT_INTERVAL_SEC = 5.0
 
 # Run yang dianalisis (None = gabungkan semua run yang ada)
 CURRENT_RUN: Optional[int] = None
@@ -64,32 +65,41 @@ def parse_timestamp(value: str) -> Optional[datetime]:
     return None
 
 
+def _actual_interval(path: str) -> float:
+    """Hitung rata-rata interval antar sampel dari file CSV."""
+    try:
+        with open(path, newline="", encoding="utf-8-sig") as f:
+            rows = list(csv.DictReader(f))
+        if len(rows) < 2:
+            return DEFAULT_INTERVAL_SEC
+        times = [t for r in rows if (t := parse_timestamp(r.get("timestamp", ""))) is not None]
+        if len(times) < 2:
+            return DEFAULT_INTERVAL_SEC
+        total = (times[-1] - times[0]).total_seconds()
+        return total / (len(times) - 1)
+    except Exception:
+        return DEFAULT_INTERVAL_SEC
+
+
 # ==============================================================================
 # Pembaca CSV dengan pemotongan berbasis waktu
 # ==============================================================================
 
 def read_csv(
     path: str,
-    warmup_sec: float = WARMUP_SEC,
-    window_sec: float = WINDOW_SEC,
+    warmup_sec: Optional[float] = None,
+    window_sec: Optional[float] = None,
     interval_sec: float = DEFAULT_INTERVAL_SEC,
 ) -> Optional[dict]:
     """
     Baca CSV metrik, potong jendela analisis berbasis waktu, lalu kembalikan
     dict kolom beserta metadata validasi.
-
-    Kembalian
-    ---------
-    dict dengan kunci:
-        "columns"       : dict[str, list[float|None]] — data kolom dalam jendela
-        "valid"         : bool — True bila run dianggap valid
-        "invalid_reason": str  — penjelasan bila tidak valid
-        "n_rows_total"  : int
-        "n_rows_window" : int
-    atau None bila berkas tidak ada.
     """
     if not os.path.exists(path):
         return None
+
+    w_warmup = WARMUP_SEC if warmup_sec is None else warmup_sec
+    w_window = WINDOW_SEC if window_sec is None else window_sec
 
     with open(path, newline="", encoding="utf-8-sig") as f:
         rows = list(csv.DictReader(f))
@@ -97,12 +107,9 @@ def read_csv(
     if not rows:
         return None
 
-    # --- Pemotongan berbasis waktu ---
     t0 = parse_timestamp(rows[0].get("timestamp", ""))
     if t0 is None:
-        # Tidak ada kolom timestamp — fallback ke potongan berbasis baris lama
         rows = rows[10:40]
-        time_based = False
     else:
         window_rows = []
         for row in rows:
@@ -110,19 +117,17 @@ def read_csv(
             if t is None:
                 continue
             elapsed = (t - t0).total_seconds()
-            if elapsed < warmup_sec:
+            if elapsed < w_warmup:
                 continue
-            if elapsed > warmup_sec + window_sec:
+            if elapsed > w_warmup + w_window:
                 break
             window_rows.append(row)
         rows = window_rows
-        time_based = True
 
     n_rows_window = len(rows)
-
-    # --- Validasi jumlah baris ---
-    expected_rows = window_sec / interval_sec
+    expected_rows = w_window / max(interval_sec, 0.1)
     min_rows = int(expected_rows * 0.9)
+
     if n_rows_window < min_rows:
         reason = (
             f"Hanya {n_rows_window} baris dalam jendela (minimum {min_rows} "
@@ -136,7 +141,6 @@ def read_csv(
             "n_rows_window": n_rows_window,
         }
 
-    # --- Susun kolom, periksa kekosongan ---
     columns: dict[str, list] = defaultdict(list)
     for row in rows:
         for name, value in row.items():
@@ -144,7 +148,6 @@ def read_csv(
                 continue
             columns[name].append(parse_value(value))
 
-    # Periksa kolom dengan > 10% nilai kosong
     empty_cols = []
     for name, vals in columns.items():
         n_empty = sum(1 for v in vals if v is None)
@@ -161,8 +164,6 @@ def read_csv(
             "n_rows_window": n_rows_window,
         }
 
-    # clean CSV tidak disimpan — file ini tidak dipakai dan mengotori folder results
-
     return {
         "columns": columns,
         "valid": True,
@@ -177,7 +178,7 @@ def read_csv(
 # ==============================================================================
 
 def calc_stats(values: list) -> dict:
-    """Hitung mean, p95_of_window_p95, max dari daftar nilai."""
+    """Hitung mean, p95_of_window_p95, max, dan std dari daftar nilai."""
     if not values:
         return {"mean": "N/A", "p95_of_window_p95": "N/A", "max": "N/A", "std": "N/A"}
 
@@ -195,7 +196,7 @@ def calc_stats(values: list) -> dict:
 
 
 def calc_latency_stats(values: list) -> dict:
-    """Hitung statistik yang sama lalu konversi detik → milidetik."""
+    """Hitung statistik yang sama lalu konversi detik ke milidetik."""
     if not values:
         return {"mean": "N/A", "p95_of_window_p95": "N/A", "max": "N/A", "std": "N/A"}
 
@@ -253,13 +254,6 @@ def save_and_print_table(
         )
 
 
-def _get_cols(result: Optional[dict], key: str) -> list:
-    """Ambil kolom dari hasil read_csv; kembalikan list kosong bila tidak ada."""
-    if result is None or not result["valid"]:
-        return []
-    return result["columns"].get(key, [])
-
-
 def _warn_invalid(label: str, result: Optional[dict]) -> None:
     if result is not None and not result["valid"]:
         print(
@@ -268,18 +262,8 @@ def _warn_invalid(label: str, result: Optional[dict]) -> None:
         )
 
 
-# ==============================================================================
-# Analisis per skenario
-# ==============================================================================
-
 def _read_runs(prefix: str, alt_prefix: Optional[str] = None, run: Optional[int] = None) -> list:
-    """
-    Kumpulkan file _run{N}.csv untuk suatu prefix.
-
-    Bila run=None  → ambil semua run yang ada (perilaku lama, untuk gabungan).
-    Bila run=N     → hanya ambil _run{N}.csv (untuk analisis run tunggal).
-    """
-    import glob as _glob
+    """Kumpulkan file _run{N}.csv untuk suatu prefix."""
     if run is not None:
         pattern = os.path.join(RESULTS_DIR, f"{prefix}_metrics_run{run}.csv")
         paths = [pattern] if os.path.exists(pattern) else []
@@ -289,29 +273,20 @@ def _read_runs(prefix: str, alt_prefix: Optional[str] = None, run: Optional[int]
         return paths
 
     pattern = os.path.join(RESULTS_DIR, f"{prefix}_metrics_run*.csv")
-    paths = sorted(
-        p for p in _glob.glob(pattern)
-        if not p.endswith("_buckets.csv")
-    )
+    paths = sorted(p for p in glob.glob(pattern) if not p.endswith("_buckets.csv"))
     if not paths and alt_prefix:
         pattern = os.path.join(RESULTS_DIR, f"{alt_prefix}_metrics_run*.csv")
-        paths = sorted(
-            p for p in _glob.glob(pattern)
-            if not p.endswith("_buckets.csv")
-        )
+        paths = sorted(p for p in glob.glob(pattern) if not p.endswith("_buckets.csv"))
     return paths
 
 
-def _merge_run_results(paths: list, label: str) -> tuple[list, str, int, int]:
-    """
-    Baca semua file run, gabungkan kolom dari run-run yang valid, kembalikan
-    (all_values_dict, status_string, n_valid, n_total).
-    """
-    from collections import defaultdict as _dd
-    merged: dict[str, list] = _dd(list)
+def _merge_run_results(paths: list, label: str) -> tuple[dict, str, int, int]:
+    """Baca semua file run dengan interval aktual dan gabungkan run yang valid."""
+    merged: dict[str, list] = defaultdict(list)
     n_valid = 0
     for path in paths:
-        result = read_csv(path)
+        interval = _actual_interval(path)
+        result = read_csv(path, interval_sec=interval)
         run_name = os.path.basename(path)
         _warn_invalid(f"{label}/{run_name}", result)
         if result and result["valid"]:
@@ -321,6 +296,10 @@ def _merge_run_results(paths: list, label: str) -> tuple[list, str, int, int]:
     status = "VALID" if n_valid > 0 else "INVALID"
     return merged, status, n_valid, len(paths)
 
+
+# ==============================================================================
+# Analisis per skenario
+# ==============================================================================
 
 def analyze_s1() -> None:
     scenarios = [
@@ -332,15 +311,14 @@ def analyze_s1() -> None:
     headers = [
         "Arsitektur",
         "Throughput trace_topic (Trace/s)",
+        "Throughput trace_topic Std",
         "Throughput pwave_topic (Trace/s)",
         "Received (Trace/s)",
         "Dropped Stale (Trace/s)",
-        "DP CPU Mean (%)",
-        "DP RAM Mean (MB)",
-        "PW CPU Mean (%)",
-        "PW RAM Mean (MB)",
-        "Run Valid",
-        "Status",
+        "DP CPU Mean (%)", "DP CPU Std (%)",
+        "DP RAM Mean (MB)", "DP RAM Std (MB)",
+        "PW CPU Mean (%)", "PW RAM Mean (MB)",
+        "Run Valid", "Status",
     ]
     table_data = []
 
@@ -348,11 +326,10 @@ def analyze_s1() -> None:
         paths = _read_runs(prefix, alt_prefix, run=CURRENT_RUN)
 
         if not paths:
-            # Fallback ke file agregat lama bila tidak ada file per-run sama sekali
             path = os.path.join(RESULTS_DIR, f"{prefix}_metrics.csv")
             if alt_prefix and not os.path.exists(path):
                 path = os.path.join(RESULTS_DIR, f"{alt_prefix}_metrics.csv")
-            result = read_csv(path)
+            result = read_csv(path, interval_sec=_actual_interval(path))
             _warn_invalid(mode_name, result)
             merged = result["columns"] if (result and result["valid"]) else {}
             status = "VALID" if (result and result["valid"]) else "INVALID"
@@ -362,8 +339,7 @@ def analyze_s1() -> None:
             run_summary = f"{n_valid}/{n_total}"
 
         def _cols(key: str) -> list:
-            vals = merged.get(key, [])
-            return [v for v in vals if v is not None]
+            return [v for v in merged.get(key, []) if v is not None]
 
         tp_trace = calc_stats(_cols("dp_throughput_trace_topic"))
         tp_pwave = calc_stats(_cols("dp_throughput_pwave_topic"))
@@ -376,12 +352,13 @@ def analyze_s1() -> None:
 
         table_data.append([
             mode_name,
-            tp_trace["mean"], tp_pwave["mean"],
+            tp_trace["mean"], tp_trace["std"],
+            tp_pwave["mean"],
             received["mean"], dropped["mean"],
-            dp_cpu["mean"], dp_mem["mean"],
+            dp_cpu["mean"], dp_cpu["std"],
+            dp_mem["mean"], dp_mem["std"],
             pw_cpu["mean"], pw_mem["mean"],
-            run_summary,
-            status,
+            run_summary, status,
         ])
 
     save_and_print_table(
@@ -390,128 +367,81 @@ def analyze_s1() -> None:
     )
 
 
-def _actual_interval(path: str) -> float:
-    """Hitung rata-rata interval antar sampel dari file CSV."""
-    import csv as _csv
-    try:
-        with open(path, newline="", encoding="utf-8-sig") as f:
-            rows = list(_csv.DictReader(f))
-        if len(rows) < 2:
-            return DEFAULT_INTERVAL_SEC
-        times = []
-        for r in rows:
-            t = parse_timestamp(r.get("timestamp", ""))
-            if t:
-                times.append(t)
-        if len(times) < 2:
-            return DEFAULT_INTERVAL_SEC
-        total = (times[-1] - times[0]).total_seconds()
-        return total / (len(times) - 1)
-    except Exception:
-        return DEFAULT_INTERVAL_SEC
-
-
 def analyze_s2() -> None:
     """
-    S2: Overhead Instrumentasi Prometheus.
-
-    Perbandingan dilakukan antara dua kondisi yang apple-to-apple —
-    keduanya diukur dengan alat yang sama (Docker SDK):
-      - NoMetrics API  : baseline tanpa Prometheus
-      - WithMetrics    : dengan Prometheus aktif, diukur via _docker_api.csv
-
-    NoMetrics CLI tidak diikutsertakan karena menggunakan alat ukur berbeda
-    (docker stats CLI subprocess) sehingga tidak sebanding.
+    S2: Overhead Instrumentasi Prometheus (Docker SDK) + Uji Signifikansi Pooled-Std.
     """
     scenarios = [
-        ("Tanpa Metrics (Baseline)",   "s2_overhead_no_metrics_api",  False),
-        ("Dengan Metrics (Prometheus)", "s2_overhead_with_metrics",    True),
+        ("Tanpa Metrics (Baseline)",    "s2_overhead_no_metrics_api", False),
+        ("Dengan Metrics (Prometheus)", "s2_overhead_with_metrics",   True),
     ]
     headers = [
         "Kondisi",
         "PW CPU Mean (%)", "PW CPU Std (%)", "PW CPU P95 (%)",
-        "PW RAM Mean (MB)", "PW RAM Max (MB)",
+        "PW RAM Mean (MB)", "PW RAM Std (MB)", "PW RAM Max (MB)",
         "Overhead CPU vs Baseline",
         "Run Valid", "Status",
     ]
     table_data = []
     baseline_cpu_mean = None
+    per_run_stats: dict[str, list[tuple[float, float, float]]] = {"base": [], "prom": []}
 
     for label, prefix, has_prometheus in scenarios:
-        # Tentukan file yang dipakai per kondisi
         if has_prometheus:
-            # WithMetrics: pakai _docker_api.csv untuk perbandingan setara
-            import glob as _glob
             if CURRENT_RUN is not None:
-                docker_api_path = os.path.join(
-                    RESULTS_DIR,
-                    f"{prefix}_metrics_run{CURRENT_RUN}_docker_api.csv"
-                )
-                docker_api_paths = [docker_api_path] if os.path.exists(docker_api_path) else []
+                p = os.path.join(RESULTS_DIR, f"{prefix}_metrics_run{CURRENT_RUN}_docker_api.csv")
+                docker_api_paths = [p] if os.path.exists(p) else []
             else:
-                docker_api_paths = sorted(_glob.glob(
+                docker_api_paths = sorted(glob.glob(
                     os.path.join(RESULTS_DIR, f"{prefix}_metrics_run*_docker_api.csv")
                 ))
             paths = docker_api_paths if docker_api_paths else _read_runs(prefix, run=CURRENT_RUN)
         else:
             paths = _read_runs(prefix, run=CURRENT_RUN)
 
-        merged_cols: dict = {}
+        merged_cols: dict[str, list] = defaultdict(list)
         n_valid = 0
 
         for p in paths:
-            actual_interval = _actual_interval(p)
-            r = read_csv(p, interval_sec=actual_interval)
+            r = read_csv(p, interval_sec=_actual_interval(p))
             run_name = os.path.basename(p)
             if r is not None:
-                pw_vals = [v for v in r["columns"].get(
-                    "pwave_aggregate_cpu_percent", []) if v is not None]
+                pw_vals = [v for v in r["columns"].get("pwave_aggregate_cpu_percent", []) if v is not None]
                 r["valid"] = len(pw_vals) >= 10
                 if not r["valid"]:
-                    r["invalid_reason"] = (
-                        f"Kurang dari 10 sampel PW CPU valid ({len(pw_vals)} sampel)"
-                    )
+                    r["invalid_reason"] = f"Kurang dari 10 sampel PW CPU valid ({len(pw_vals)} sampel)"
             _warn_invalid(f"{label}/{run_name}", r)
             if r and r["valid"]:
                 n_valid += 1
                 for col, vals in r["columns"].items():
-                    merged_cols.setdefault(col, []).extend(vals)
+                    merged_cols[col].extend(vals)
+                run_cpu = calc_stats([v for v in r["columns"].get("pwave_aggregate_cpu_percent", []) if v is not None])
+                run_mem = calc_stats([v for v in r["columns"].get("pwave_aggregate_mem_mb", []) if v is not None])
+                key = "prom" if has_prometheus else "base"
+                if run_cpu["mean"] != "N/A":
+                    per_run_stats[key].append((float(run_cpu["mean"]), float(run_cpu["std"]), float(run_mem["mean"])))
 
         status = "VALID" if n_valid > 0 else "INVALID"
         run_summary = f"{n_valid}/{len(paths)}"
 
-        def _cols(key: str) -> list:
-            return [v for v in merged_cols.get(key, []) if v is not None]
+        cpu_s = calc_stats([v for v in merged_cols.get("pwave_aggregate_cpu_percent", []) if v is not None])
+        mem_s = calc_stats([v for v in merged_cols.get("pwave_aggregate_mem_mb", []) if v is not None])
 
-        cpu_vals = _cols("pwave_aggregate_cpu_percent")
-        mem_vals = _cols("pwave_aggregate_mem_mb")
-
-        if cpu_vals:
-            import numpy as _np
-            cpu_mean = round(float(_np.mean(cpu_vals)), 2)
-            cpu_std  = round(float(_np.std(cpu_vals)), 2)
-            cpu_p95  = round(float(_np.percentile(cpu_vals, 95)), 2)
-            mem_mean = round(float(_np.mean(mem_vals)), 2) if mem_vals else "N/A"
-            mem_max  = round(float(_np.max(mem_vals)), 2)  if mem_vals else "N/A"
-        else:
-            cpu_mean = cpu_std = cpu_p95 = mem_mean = mem_max = "N/A"
-
-        # Hitung overhead relatif terhadap baseline
         if not has_prometheus:
-            baseline_cpu_mean = cpu_mean
+            baseline_cpu_mean = cpu_s["mean"]
             overhead = "— (baseline)"
         else:
-            if baseline_cpu_mean and baseline_cpu_mean != "N/A" and cpu_mean != "N/A":
-                delta = round(cpu_mean - baseline_cpu_mean, 2)
-                pct   = round((delta / baseline_cpu_mean) * 100, 1)
+            if baseline_cpu_mean and baseline_cpu_mean != "N/A" and cpu_s["mean"] != "N/A":
+                delta = round(float(cpu_s["mean"]) - float(baseline_cpu_mean), 2)
+                pct = round((delta / float(baseline_cpu_mean)) * 100, 1)
                 overhead = f"{delta:+.2f}% ({pct:+.1f}%)"
             else:
                 overhead = "N/A"
 
         table_data.append([
             label,
-            cpu_mean, cpu_std, cpu_p95,
-            mem_mean, mem_max,
+            cpu_s["mean"], cpu_s["std"], cpu_s["p95_of_window_p95"],
+            mem_s["mean"], mem_s["std"], mem_s["max"],
             overhead,
             run_summary, status,
         ])
@@ -521,30 +451,46 @@ def analyze_s2() -> None:
         headers, table_data, f"summary_s2_overhead{_run_suffix()}.csv",
     )
 
+    # Uji signifikansi statistik per-run & grand mean (menggantikan s2_analysis.py)
+    if per_run_stats["base"] and len(per_run_stats["base"]) == len(per_run_stats["prom"]):
+        print("\n--- Uji Signifikansi Pooled-Std Skenario 2 (Jendela Steady-State) ---")
+        for idx, ((nm, ns, nrm), (wm, ws, wrm)) in enumerate(zip(per_run_stats["base"], per_run_stats["prom"]), 1):
+            diff = wm - nm
+            pooled_std = (ns + ws) / 2.0
+            sig = "SIGNIFIKAN" if abs(diff) >= pooled_std else "NOISE NORMAL"
+            print(
+                f"  Run {idx}: NoMetrics={nm:.2f}%±{ns:.2f}% (RAM {nrm:.1f} MB) | "
+                f"WithMetrics={wm:.2f}%±{ws:.2f}% (RAM {wrm:.1f} MB) | "
+                f"Selisih={diff:+.2f}% | PooledStd={pooled_std:.2f}% -> {sig}"
+            )
+        g_no = sum(x[0] for x in per_run_stats["base"]) / len(per_run_stats["base"])
+        g_wi = sum(x[0] for x in per_run_stats["prom"]) / len(per_run_stats["prom"])
+        g_ns = sum(x[1] for x in per_run_stats["base"]) / len(per_run_stats["base"])
+        g_ws = sum(x[1] for x in per_run_stats["prom"]) / len(per_run_stats["prom"])
+        g_pooled = (g_ns + g_ws) / 2.0
+        ratio = abs(g_wi - g_no) / g_pooled if g_pooled > 0 else 0.0
+        kesimpulan = "NOISE (bukan overhead nyata)" if ratio < 0.5 else "Perlu investigasi"
+        print(
+            f"  Grand Mean: NoMetrics={g_no:.2f}%±{g_ns:.2f}% vs WithMetrics={g_wi:.2f}%±{g_ws:.2f}% | "
+            f"Selisih={g_wi - g_no:+.2f}% ({ratio:.2f}x pooled-std -> {kesimpulan})"
+        )
+
 
 def analyze_s3() -> None:
-    """
-    S3: Kafka Native vs Kafka + NGINX Load Balancer.
-
-    Kedua kondisi menggunakan service berbeda dengan nama metric berbeda:
-      Kafka Native      -> p_wave_detector       -> pwave_*
-      Kafka + NGINX     -> p_wave_detector_lb     -> pwave_lb_*
-
-    Kolom yang dipilih disesuaikan per kondisi agar tidak ada false no_data.
-    """
     scenarios = [
         ("Kafka Native",  "s3_broker_kafka", False),
-        ("Kafka + NGINX", "s3_broker_nginx",  True),
+        ("Kafka + NGINX", "s3_broker_nginx", True),
     ]
     headers = [
         "Arsitektur Broker",
         "Throughput pwave_topic (tr/s)",
-        "E2E P-Wave Mean (ms)", "E2E P-Wave P95 (ms)",
+        "E2E P-Wave Mean (ms)", "E2E P-Wave P95 (ms)", "E2E P-Wave Std (ms)",
         "Kafka Delay P95 (ms)", "Queue Wait P95 (ms)",
         "Inferensi P95 (ms)",
-        "Laju Deteksi (det/s)",
+        "Laju Deteksi (det/s)", "Laju Deteksi Std",
         "Inflight Mean",
-        "CPU Mean (%)", "RAM Mean (MB)",
+        "CPU Mean (%)", "CPU Std (%)",
+        "RAM Mean (MB)", "RAM Std (MB)",
         "Consumer Lag Mean",
         "Run Valid", "Status",
     ]
@@ -552,26 +498,21 @@ def analyze_s3() -> None:
 
     for mode_label, prefix, is_lb in scenarios:
         paths = _read_runs(prefix, run=CURRENT_RUN)
-
-        merged_cols: dict = {}
+        merged_cols: dict[str, list] = defaultdict(list)
         n_valid = 0
         for p in paths:
-            actual_interval = _actual_interval(p)
-            r = read_csv(p, interval_sec=actual_interval)
+            r = read_csv(p, interval_sec=_actual_interval(p))
             run_name = os.path.basename(p)
             if r is not None:
-                # Validasi: cukup CPU dan throughput tersedia
-                cpu_vals = [v for v in r["columns"].get(
-                    "pwave_aggregate_cpu_percent", []) if v is not None]
-                tp_vals  = [v for v in r["columns"].get(
-                    "dp_throughput_pwave_topic", []) if v is not None]
+                cpu_vals = [v for v in r["columns"].get("pwave_aggregate_cpu_percent", []) if v is not None]
+                tp_vals  = [v for v in r["columns"].get("dp_throughput_pwave_topic", []) if v is not None]
                 if len(cpu_vals) >= 10 or len(tp_vals) >= 10:
                     r["valid"] = True
             _warn_invalid(f"{mode_label}/{run_name}", r)
             if r and r["valid"]:
                 n_valid += 1
                 for col, vals in r["columns"].items():
-                    merged_cols.setdefault(col, []).extend(vals)
+                    merged_cols[col].extend(vals)
 
         status = "VALID" if n_valid > 0 else "INVALID"
         run_summary = f"{n_valid}/{len(paths)}" if paths else "0/0"
@@ -579,19 +520,16 @@ def analyze_s3() -> None:
         def _cols(key: str) -> list:
             return [v for v in merged_cols.get(key, []) if v is not None]
 
-        # Pilih kolom yang sesuai dengan arsitektur
         if is_lb:
-            lat_col = "pwave_lb_inference_latency_p95"
-            kd_col  = "pwave_lb_kafka_delay_p95"
-            qw_col  = "pwave_lb_queue_wait_p95"
-            det_col = "pwave_lb_detection_rate"
-            inf_col = "pwave_lb_inflight"
+            lat_col, kd_col, qw_col, det_col, inf_col = (
+                "pwave_lb_inference_latency_p95", "pwave_lb_kafka_delay_p95",
+                "pwave_lb_queue_wait_p95", "pwave_lb_detection_rate", "pwave_lb_inflight"
+            )
         else:
-            lat_col = "pwave_inference_latency_p95"
-            kd_col  = "pwave_kafka_delay_p95"
-            qw_col  = "pwave_queue_wait_p95"
-            det_col = "pwave_detection_rate"
-            inf_col = "pwave_inflight"
+            lat_col, kd_col, qw_col, det_col, inf_col = (
+                "pwave_inference_latency_p95", "pwave_kafka_delay_p95",
+                "pwave_queue_wait_p95", "pwave_detection_rate", "pwave_inflight"
+            )
 
         tp  = calc_stats(_cols("dp_throughput_pwave_topic"))
         e2e = calc_latency_stats(_cols("e2e_delay_pwave_p95"))
@@ -607,11 +545,13 @@ def analyze_s3() -> None:
         table_data.append([
             mode_label,
             tp["mean"],
-            e2e["mean"], e2e["p95_of_window_p95"],
+            e2e["mean"], e2e["p95_of_window_p95"], e2e["std"],
             kd["p95_of_window_p95"], qw["p95_of_window_p95"],
             lat["p95_of_window_p95"],
-            det["mean"], inf["mean"],
-            cpu["mean"], mem["mean"],
+            det["mean"], det["std"],
+            inf["mean"],
+            cpu["mean"], cpu["std"],
+            mem["mean"], mem["std"],
             lag["mean"],
             run_summary, status,
         ])
@@ -628,12 +568,11 @@ def analyze_s4() -> None:
 
 
 def analyze_s4a() -> None:
-    # --- 4A: Archiver ---
     headers_a = [
         "Replika Archiver",
-        "CPU Mean (%)", "CPU Max (%)",
-        "RAM Mean (MB)",
-        "Records Saved (rec/s)",
+        "CPU Mean (%)", "CPU Std (%)", "CPU Max (%)",
+        "RAM Mean (MB)", "RAM Std (MB)",
+        "Records Saved (rec/s)", "Records Saved Std",
         "Write Latency InfluxDB P95 (ms)",
         "Write Latency MongoDB P95 (ms)",
         "Run Valid", "Status",
@@ -642,22 +581,20 @@ def analyze_s4a() -> None:
 
     for i in range(1, 6):
         paths = _read_runs(f"s4_archiver_{i}_container", run=CURRENT_RUN)
-        merged_cols: dict = {}
+        merged_cols: dict[str, list] = defaultdict(list)
         n_valid = 0
         for p in paths:
-            actual_interval = _actual_interval(p)
-            r = read_csv(p, interval_sec=actual_interval)
+            r = read_csv(p, interval_sec=_actual_interval(p))
             run_name = os.path.basename(p)
             if r is not None:
-                cpu_vals = [v for v in r["columns"].get(
-                    "archiver_aggregate_cpu_percent", []) if v is not None]
+                cpu_vals = [v for v in r["columns"].get("archiver_aggregate_cpu_percent", []) if v is not None]
                 if len(cpu_vals) >= 10:
                     r["valid"] = True
             _warn_invalid(f"Archiver {i}c/{run_name}", r)
             if r and r["valid"]:
                 n_valid += 1
                 for col, vals in r["columns"].items():
-                    merged_cols.setdefault(col, []).extend(vals)
+                    merged_cols[col].extend(vals)
 
         status = "VALID" if n_valid > 0 else "INVALID"
         run_summary = f"{n_valid}/{len(paths)}" if paths else "0/0"
@@ -673,9 +610,9 @@ def analyze_s4a() -> None:
 
         table_data_a.append([
             f"{i} Container",
-            cpu["mean"], cpu["max"],
-            mem["mean"],
-            saved["mean"],
+            cpu["mean"], cpu["std"], cpu["max"],
+            mem["mean"], mem["std"],
+            saved["mean"], saved["std"],
             lat_if["p95_of_window_p95"],
             lat_mg["p95_of_window_p95"],
             run_summary, status,
@@ -688,18 +625,18 @@ def analyze_s4a() -> None:
 
 
 def analyze_s4b() -> None:
-    # --- 4B: P-Wave Detector ---
     scenarios_b = [
-        ("Native Kafka",  "s4_pwave_kafka",       False, range(2, 6)),
-        ("Load Balancer", "s4_pwave_kafka_nginx",  True,  range(2, 6)),
+        ("Native Kafka",  "s4_pwave_kafka",      False, range(2, 6)),
+        ("Load Balancer", "s4_pwave_kafka_nginx", True,  range(2, 6)),
     ]
     headers_b = [
         "Arsitektur", "Replika ML",
         "Throughput pwave_topic (Trace/s)",
-        "Laju Deteksi (det/s)",
+        "Laju Deteksi (det/s)", "Laju Deteksi Std",
         "Latensi Inferensi P95 (ms)",
         "E2E P95 (ms)",
-        "CPU Mean (%)", "RAM Mean (MB)",
+        "CPU Mean (%)", "CPU Std (%)",
+        "RAM Mean (MB)", "RAM Std (MB)",
         "Run Valid", "Status",
     ]
     table_data_b = []
@@ -707,24 +644,21 @@ def analyze_s4b() -> None:
     for mode_label, prefix, is_lb, replika_range in scenarios_b:
         for i in replika_range:
             paths = _read_runs(f"{prefix}_{i}c", run=CURRENT_RUN)
-            merged_cols2: dict = {}
+            merged_cols2: dict[str, list] = defaultdict(list)
             n_valid = 0
             for p in paths:
-                actual_interval = _actual_interval(p)
-                r = read_csv(p, interval_sec=actual_interval)
+                r = read_csv(p, interval_sec=_actual_interval(p))
                 run_name = os.path.basename(p)
                 if r is not None:
-                    cpu_vals = [v for v in r["columns"].get(
-                        "pwave_aggregate_cpu_percent", []) if v is not None]
-                    tp_vals  = [v for v in r["columns"].get(
-                        "dp_throughput_pwave_topic", []) if v is not None]
+                    cpu_vals = [v for v in r["columns"].get("pwave_aggregate_cpu_percent", []) if v is not None]
+                    tp_vals  = [v for v in r["columns"].get("dp_throughput_pwave_topic", []) if v is not None]
                     if len(cpu_vals) >= 10 or len(tp_vals) >= 10:
                         r["valid"] = True
                 _warn_invalid(f"{mode_label} {i}c/{run_name}", r)
                 if r and r["valid"]:
                     n_valid += 1
                     for col, vals in r["columns"].items():
-                        merged_cols2.setdefault(col, []).extend(vals)
+                        merged_cols2[col].extend(vals)
 
             status = "VALID" if n_valid > 0 else "INVALID"
             run_summary = f"{n_valid}/{len(paths)}" if paths else "0/0"
@@ -732,7 +666,6 @@ def analyze_s4b() -> None:
             def _cols_b(key: str) -> list:
                 return [v for v in merged_cols2.get(key, []) if v is not None]
 
-            # Pilih kolom metrik sesuai arsitektur
             det_col = "pwave_lb_detection_rate" if is_lb else "pwave_detection_rate"
             lat_col = "pwave_lb_inference_latency_p95" if is_lb else "pwave_inference_latency_p95"
 
@@ -746,10 +679,11 @@ def analyze_s4b() -> None:
             table_data_b.append([
                 mode_label, f"{i} Container",
                 tp["mean"],
-                det["mean"],
+                det["mean"], det["std"],
                 lat["p95_of_window_p95"],
                 e2e["p95_of_window_p95"],
-                cpu["mean"], mem["mean"],
+                cpu["mean"], cpu["std"],
+                mem["mean"], mem["std"],
                 run_summary, status,
             ])
 
@@ -762,8 +696,9 @@ def analyze_s4b() -> None:
 def analyze_s5() -> None:
     headers = [
         "WebSocket Server", "Klien Aktif",
-        "Broadcast P95 (ms)",
-        "CPU Mean (%)", "RAM Mean (MB)",
+        "Broadcast P95 (ms)", "Broadcast Std (ms)",
+        "CPU Mean (%)", "CPU Std (%)",
+        "RAM Mean (MB)", "RAM Std (MB)",
         "Run Valid", "Status",
     ]
     table_data = []
@@ -771,22 +706,20 @@ def analyze_s5() -> None:
     for mode_label, prefix in [("FastAPI", "s5_websocket_fastapi"), ("Express.js", "s5_websocket_express")]:
         for c in [1, 5]:
             paths = _read_runs(f"{prefix}_{c}c", run=CURRENT_RUN)
-            merged_cols: dict = {}
+            merged_cols: dict[str, list] = defaultdict(list)
             n_valid = 0
             for p in paths:
-                actual_interval = _actual_interval(p)
-                r = read_csv(p, interval_sec=actual_interval)
+                r = read_csv(p, interval_sec=_actual_interval(p))
                 run_name = os.path.basename(p)
                 if r is not None:
-                    cpu_vals = [v for v in r["columns"].get(
-                        "ws_aggregate_cpu_percent", []) if v is not None]
+                    cpu_vals = [v for v in r["columns"].get("ws_aggregate_cpu_percent", []) if v is not None]
                     if len(cpu_vals) >= 10:
                         r["valid"] = True
                 _warn_invalid(f"{mode_label} {c}c/{run_name}", r)
                 if r and r["valid"]:
                     n_valid += 1
                     for col, vals in r["columns"].items():
-                        merged_cols.setdefault(col, []).extend(vals)
+                        merged_cols[col].extend(vals)
 
             status = "VALID" if n_valid > 0 else "INVALID"
             run_summary = f"{n_valid}/{len(paths)}" if paths else "0/0"
@@ -794,18 +727,16 @@ def analyze_s5() -> None:
             def _cols(key: str) -> list:
                 return [v for v in merged_cols.get(key, []) if v is not None]
 
-            if "fastapi" in prefix:
-                lat = calc_latency_stats(_cols("fastapi_ws_broadcast_latency_p95"))
-            else:
-                lat = calc_latency_stats(_cols("ws_broadcast_latency_p95"))
-
+            lat_key = "fastapi_ws_broadcast_latency_p95" if "fastapi" in prefix else "ws_broadcast_latency_p95"
+            lat = calc_latency_stats(_cols(lat_key))
             cpu = calc_stats(_cols("ws_aggregate_cpu_percent"))
             mem = calc_stats(_cols("ws_aggregate_mem_mb"))
 
             table_data.append([
                 mode_label, f"{c} Klien",
-                lat["p95_of_window_p95"],
-                cpu["mean"], mem["mean"],
+                lat["p95_of_window_p95"], lat["std"],
+                cpu["mean"], cpu["std"],
+                mem["mean"], mem["std"],
                 run_summary, status,
             ])
 
@@ -814,10 +745,6 @@ def analyze_s5() -> None:
         headers, table_data, f"summary_s5_websocket{_run_suffix()}.csv",
     )
 
-
-# ==============================================================================
-# Entry point
-# ==============================================================================
 
 def analyze_all() -> None:
     analyze_s1()
@@ -837,41 +764,23 @@ if __name__ == "__main__":
         "--scenario",
         choices=["1", "2", "3", "4", "5", "all", "s1", "s2", "s3", "s4_archiver", "s4_pwave", "s5", "final"],
         default="all",
-        help="Skenario yang dianalisis (1/s1, 2/s2, 3/s3, 4/s4_archiver/s4_pwave, 5/s5, all)",
+        help="Skenario yang dianalisis (default: all)",
     )
-    parser.add_argument(
-        "--run",
-        type=int,
-        default=None,
-        help=(
-            "Nomor run yang dianalisis secara terpisah (mis. --run 1, --run 2). "
-            "Output: summary_sX_..._runN.csv. "
-            "Tanpa flag ini: gabungkan semua run yang ada (output: summary_sX_....csv)."
-        ),
-    )
-    parser.add_argument(
-        "--warmup-sec",
-        type=float,
-        default=WARMUP_SEC,
-        help=f"Detik warmup yang dibuang dari awal (default {WARMUP_SEC}s)",
-    )
-    parser.add_argument(
-        "--window-sec",
-        type=float,
-        default=WINDOW_SEC,
-        help=f"Lebar jendela analisis setelah warmup (default {WINDOW_SEC}s)",
-    )
+    parser.add_argument("--run", type=int, default=None, help="Analisis run tunggal tertentu (mis. --run 1)")
+    parser.add_argument("--warmup-sec", type=float, default=WARMUP_SEC, help=f"Detik warmup (default {WARMUP_SEC}s)")
+    parser.add_argument("--window-sec", type=float, default=WINDOW_SEC, help=f"Lebar jendela stabil (default {WINDOW_SEC}s)")
+    parser.add_argument("--results-dir", type=str, default=RESULTS_DIR, help="Direktori folder results")
     args = parser.parse_args()
 
-    # Override global
     WARMUP_SEC = args.warmup_sec
     WINDOW_SEC = args.window_sec
     CURRENT_RUN = args.run
+    RESULTS_DIR = args.results_dir
 
     if CURRENT_RUN is not None:
-        print(f"[Mode: Run {CURRENT_RUN} saja — output akan diberi suffix _run{CURRENT_RUN}]")
+        print(f"[Mode: Run {CURRENT_RUN} saja — output diberi suffix _run{CURRENT_RUN}]")
     else:
-        print("[Mode: Gabungkan semua run yang ada]")
+        print("[Mode: Gabungkan semua run yang valid]")
 
     if args.scenario in ("1", "s1"):
         analyze_s1()
