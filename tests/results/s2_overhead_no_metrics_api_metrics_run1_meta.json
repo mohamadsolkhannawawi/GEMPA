@@ -16981,9 +16981,9 @@
     "compose_hash":  "550933439603",
     "python_exe":  "C:\\Users\\user\\miniconda3\\python.exe",
     "compose_file":  "docker-compose-s2-no_metrics.yml",
-    "timestamp":  "2026-11-19T05:44:52Z",
+    "timestamp":  "2026-11-22T12:45:31Z",
     "env_hash":  "7F563A08B81F",
     "run_index":  1,
     "kafka_describe":  "OCI runtime exec failed: exec failed: unable to start container process: exec: \"kafka-topics.sh\": executable file not found in $PATH",
-    "git_commit":  "de7bf3e"
+    "git_commit":  "cef7162"
 }
