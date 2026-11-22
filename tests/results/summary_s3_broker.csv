@@ -1,3 +1,3 @@
 Arsitektur Broker,Throughput pwave_topic (tr/s),E2E P-Wave Mean (ms),E2E P-Wave P95 (ms),E2E P-Wave Std (ms),Kafka Delay P95 (ms),Queue Wait P95 (ms),Inferensi P95 (ms),Laju Deteksi (det/s),Laju Deteksi Std,Inflight Mean,CPU Mean (%),CPU Std (%),RAM Mean (MB),RAM Std (MB),Consumer Lag Mean,Run Valid,Status
-Kafka Native,42.51,143976.74,244615.47,53530.65,282875.37,1995.45,178513.66,6.86,2.4,1098.1,811.27,57.7,25567.47,2786.79,20849.19,1/3,VALID
-Kafka + NGINX,60.23,88958.14,119288.18,27780.62,126559.08,90.75,64873.12,18.4,0.7,997.8,770.88,97.21,9346.19,904.4,16917.01,3/3,VALID
+Kafka Native,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,0/3,INVALID
+Kafka + NGINX,59.6,88763.35,145576.17,29799.1,88988.22,85.8,78335.54,18.95,0.5,1109.63,731.92,51.48,8609.03,563.99,15981.08,3/3,VALID
