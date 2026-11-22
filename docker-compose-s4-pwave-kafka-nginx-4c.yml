@@ -1,5 +1,5 @@
 # ==============================================================================
-# SKENARIO    : S4 — Uji Skalabilitas (Stress Testing) (P-Wave Detector)
+# SKENARIO    : S4 - Uji Skalabilitas (Stress Testing) (P-Wave Detector)
 # KONFIGURASI : FastAPI HTTP Load Balanced - 4 Container P-Wave Detector
 # PERINTAH    : docker compose -f docker-compose-s3-pwave-kafka-nginx-4c.yml up -d --build
 # ==============================================================================

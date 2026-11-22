@@ -1,5 +1,5 @@
 # ==============================================================================
-# SKENARIO    : S3 — Kafka Native (3 Broker Kafka tanpa NGINX)
+# SKENARIO    : S3 - Kafka Native (3 Broker Kafka tanpa NGINX)
 # KONFIGURASI : Kafka Native (3 Broker Kafka tanpa NGINX)
 # PERINTAH    : docker compose -f docker-compose-s3-kafka.yml up -d --build
 # ==============================================================================
@@ -251,7 +251,7 @@ services:
         echo "All topics initialized." || echo "kafka-init failed."
     restart: "no"
 
-  # Kafka Exporter — mengekspos metrik consumer-group lag ke Prometheus (:9308)
+  # Kafka Exporter - mengekspos metrik consumer-group lag ke Prometheus (:9308)
   kafka-exporter:
     image: danielqsj/kafka-exporter:latest
     container_name: kafka-exporter

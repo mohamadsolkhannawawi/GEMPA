@@ -1,12 +1,12 @@
 # ==============================================================================
 # EEWS FINAL PRODUCTION ARCHITECTURE
-# Konfigurasi optimal berdasarkan hasil pengujian S1–S5:
-#   S1 → Data Provider  : Multithread (throughput 160.68 tr/s, CPU 59.92%, RAM 92 MB)
-#   S2 → Prometheus     : Aktif (overhead CPU -4.0%, overhead RAM +2.0%)
-#   S3 → Broker         : Kafka + NGINX Load Balancer (E2E P95 119s vs 244s Native, +42% throughput)
-#   S4a→ Archiver       : 3 Replika (throughput 297.66 rec/s, latency P95 49ms)
-#   S4b→ P-Wave ML      : Load Balancer 5 Replika (laju deteksi 19.48 det/s, inferensi P95 40.5s)
-#   S5 → WebSocket      : Express.js (broadcast P95 2.82ms, CPU 25.39%, 2-3x lebih cepat dari FastAPI)
+# Konfigurasi optimal berdasarkan hasil pengujian S1-S5:
+#   S1 -> Data Provider  : Multithread (throughput 160.68 tr/s, CPU 59.92%, RAM 92 MB)
+#   S2 -> Prometheus     : Aktif (overhead CPU -4.0%, overhead RAM +2.0%)
+#   S3 -> Broker         : Kafka + NGINX Load Balancer (E2E P95 119s vs 244s Native, +42% throughput)
+#   S4a-> Archiver       : 3 Replika (throughput 297.66 rec/s, latency P95 49ms)
+#   S4b-> P-Wave ML      : Load Balancer 5 Replika (laju deteksi 19.48 det/s, inferensi P95 40.5s)
+#   S5 -> WebSocket      : Express.js (broadcast P95 2.82ms, CPU 25.39%, 2-3x lebih cepat dari FastAPI)
 # Perintah: docker compose -f docker-compose-final.yml up -d --build
 # ==============================================================================
 
@@ -162,7 +162,7 @@ services:
       - "9273:9273"
     restart: always
 
-  # --- GENERATOR DATA (Pemenang S1: Multithread — throughput 168 tr/s) ---
+  # --- GENERATOR DATA (Pemenang S1: Multithread - throughput 168 tr/s) ---
   data_provider:
     container_name: data_provider
     build:
@@ -252,7 +252,7 @@ services:
       - mongo-express
     restart: always
 
-  # --- DISEMINASI WEBSOCKET (Pemenang S5: Express.js — broadcast P95 2.17ms, CPU 24%) ---
+  # --- DISEMINASI WEBSOCKET (Pemenang S5: Express.js - broadcast P95 2.17ms, CPU 24%) ---
   api_server:
     container_name: api_server
     build:

@@ -1,5 +1,5 @@
 # ==============================================================================
-# SKENARIO    : S4 — Uji Skalabilitas (Stress Testing) (P-Wave Detector)
+# SKENARIO    : S4 - Uji Skalabilitas (Stress Testing) (P-Wave Detector)
 # KONFIGURASI : Kafka Native - 5 Container P-Wave Detector
 # PERINTAH    : docker compose -f docker-compose-s3-pwave-kafka-5c.yml up -d --build
 # ==============================================================================

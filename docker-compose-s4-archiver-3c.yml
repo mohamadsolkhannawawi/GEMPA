@@ -1,5 +1,5 @@
 # ==============================================================================
-# SKENARIO    : S4 — Uji Skalabilitas (Stress Testing) (Data Archiver)
+# SKENARIO    : S4 - Uji Skalabilitas (Stress Testing) (Data Archiver)
 # KONFIGURASI : 3 Container Data Archiver
 # PERINTAH    : docker compose -f docker-compose-s3-archiver-3c.yml up -d --build
 # ==============================================================================
@@ -262,7 +262,7 @@ services:
       - "9273:9273"
     restart: always
 
-  # Inisialisasi topik Kafka secara deterministik — partisi & RF sesuai spesifikasi.
+  # Inisialisasi topik Kafka secara deterministik - partisi & RF sesuai spesifikasi.
   # Berjalan sekali lalu keluar (restart: "no"). [A9/K12]
   kafka-init:
     image: confluentinc/cp-kafka:7.7.1

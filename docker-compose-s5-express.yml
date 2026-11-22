@@ -1,5 +1,5 @@
 # ==============================================================================
-# SKENARIO    : S5 — Optimasi Hilir (Diseminasi WebSocket)
+# SKENARIO    : S5 - Optimasi Hilir (Diseminasi WebSocket)
 # KONFIGURASI : Express.js / Socket.IO (Koneksi bisa disimulasikan 1 atau 5 Klien via Script)
 # PERINTAH    : docker compose -f docker-compose-s5-express.yml up -d --build
 # ==============================================================================

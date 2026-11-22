@@ -1,5 +1,5 @@
 # ==============================================================================
-# SKENARIO    : S1 — Strategi Konkurensi Data Provider
+# SKENARIO    : S1 - Strategi Konkurensi Data Provider
 # KONFIGURASI : Multithread (Banyak thread dalam 1 proses / core)
 # PERINTAH    : docker compose -f docker-compose-s1-multithread.yml up -d --build
 # ==============================================================================
@@ -263,7 +263,7 @@ services:
       - "9273:9273"
     restart: always
 
-  # Inisialisasi topik Kafka secara deterministik — partisi & RF sesuai spesifikasi.
+  # Inisialisasi topik Kafka secara deterministik - partisi & RF sesuai spesifikasi.
   # Berjalan sekali lalu keluar (restart: "no"). [A9/K12]
   kafka-init:
     image: confluentinc/cp-kafka:7.7.1

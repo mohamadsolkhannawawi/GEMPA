@@ -1,5 +1,5 @@
 # ==============================================================================
-# SKENARIO    : S2 — Overhead Instrumentasi Prometheus
+# SKENARIO    : S2 - Overhead Instrumentasi Prometheus
 # KONFIGURASI : Dengan Instrumentasi Prometheus (Semua metrik aktif dan dipantau Grafana)
 # PERINTAH    : docker compose -f docker-compose-s2-with_metrics.yml up -d --build
 # ==============================================================================
